@@ -18,6 +18,7 @@ import { Route as DoctorRouteImport } from './routes/doctor'
 import { Route as CaregiverRouteImport } from './routes/caregiver'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TalkIndexRouteImport } from './routes/talk.index'
+import { Route as DoctorIndexRouteImport } from './routes/doctor.index'
 import { Route as TalkThreadIdRouteImport } from './routes/talk.$threadId'
 import { Route as DoctorRecordRouteImport } from './routes/doctor.record'
 import { Route as ApiTtsRouteImport } from './routes/api/tts'
@@ -67,6 +68,11 @@ const TalkIndexRoute = TalkIndexRouteImport.update({
   path: '/',
   getParentRoute: () => TalkRoute,
 } as any)
+const DoctorIndexRoute = DoctorIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DoctorRoute,
+} as any)
 const TalkThreadIdRoute = TalkThreadIdRouteImport.update({
   id: '/$threadId',
   path: '/$threadId',
@@ -95,12 +101,12 @@ export interface FileRoutesByFullPath {
   '/api/tts': typeof ApiTtsRoute
   '/doctor/record': typeof DoctorRecordRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
+  '/doctor/': typeof DoctorIndexRoute
   '/talk/': typeof TalkIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/caregiver': typeof CaregiverRoute
-  '/doctor': typeof DoctorRouteWithChildren
   '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
@@ -108,6 +114,7 @@ export interface FileRoutesByTo {
   '/api/tts': typeof ApiTtsRoute
   '/doctor/record': typeof DoctorRecordRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
+  '/doctor': typeof DoctorIndexRoute
   '/talk': typeof TalkIndexRoute
 }
 export interface FileRoutesById {
@@ -123,6 +130,7 @@ export interface FileRoutesById {
   '/api/tts': typeof ApiTtsRoute
   '/doctor/record': typeof DoctorRecordRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
+  '/doctor/': typeof DoctorIndexRoute
   '/talk/': typeof TalkIndexRoute
 }
 export interface FileRouteTypes {
@@ -139,12 +147,12 @@ export interface FileRouteTypes {
     | '/api/tts'
     | '/doctor/record'
     | '/talk/$threadId'
+    | '/doctor/'
     | '/talk/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/caregiver'
-    | '/doctor'
     | '/emergency'
     | '/memory'
     | '/profile'
@@ -152,6 +160,7 @@ export interface FileRouteTypes {
     | '/api/tts'
     | '/doctor/record'
     | '/talk/$threadId'
+    | '/doctor'
     | '/talk'
   id:
     | '__root__'
@@ -166,6 +175,7 @@ export interface FileRouteTypes {
     | '/api/tts'
     | '/doctor/record'
     | '/talk/$threadId'
+    | '/doctor/'
     | '/talk/'
   fileRoutesById: FileRoutesById
 }
@@ -246,6 +256,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TalkIndexRouteImport
       parentRoute: typeof TalkRoute
     }
+    '/doctor/': {
+      id: '/doctor/'
+      path: '/'
+      fullPath: '/doctor/'
+      preLoaderRoute: typeof DoctorIndexRouteImport
+      parentRoute: typeof DoctorRoute
+    }
     '/talk/$threadId': {
       id: '/talk/$threadId'
       path: '/$threadId'
@@ -272,10 +289,12 @@ declare module '@tanstack/react-router' {
 
 interface DoctorRouteChildren {
   DoctorRecordRoute: typeof DoctorRecordRoute
+  DoctorIndexRoute: typeof DoctorIndexRoute
 }
 
 const DoctorRouteChildren: DoctorRouteChildren = {
   DoctorRecordRoute: DoctorRecordRoute,
+  DoctorIndexRoute: DoctorIndexRoute,
 }
 
 const DoctorRouteWithChildren =
