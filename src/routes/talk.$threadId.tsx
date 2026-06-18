@@ -8,6 +8,8 @@ import { speak, stopSpeaking } from "@/lib/voice";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Trash2, Send, Sparkles, History, Plus, X, MessageCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { CloudOff } from "lucide-react";
+import { useConnectivity } from "@/lib/connectivity";
 
 export const Route = createFileRoute("/talk/$threadId")({
   head: () => ({
@@ -90,6 +92,7 @@ function TalkThreadPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { offline } = useConnectivity();
 
   // Mark this thread active when it loads
   useEffect(() => {
@@ -154,6 +157,16 @@ function TalkThreadPage() {
       setSpeaking(true);
       await speak(`Opening ${nav.label}.`, () => setSpeaking(false));
       navigate({ to: nav.to });
+      return;
+    }
+
+    if (offline) {
+      appendToThread(thread.id, { role: "user", content: text });
+      appendToThread(thread.id, {
+        role: "assistant",
+        content:
+          "I'm in Limited Offline Mode right now, so I can't reach the AI advocate or run medical search. Your symptoms, notes, doctor summary, and emergency QR all still work — I'll pick up the conversation as soon as we're back online.",
+      });
       return;
     }
 
