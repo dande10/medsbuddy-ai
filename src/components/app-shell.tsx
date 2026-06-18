@@ -1,7 +1,8 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { Home, MessageCircle, Pill, Stethoscope, Clock, Siren, User } from "lucide-react";
+import { Home, MessageCircle, Pill, Stethoscope, Clock, Siren, User, CloudOff, Cloud, Wifi } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { stopSpeaking } from "@/lib/voice";
+import { useConnectivity } from "@/lib/connectivity";
 
 const navItems = [
   { to: "/", icon: Home, label: "Home" },
@@ -12,27 +13,9 @@ const navItems = [
   { to: "/emergency", icon: Siren, label: "SOS" },
 ] as const;
 
-function useOnline() {
-  const [online, setOnline] = useState(true);
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine);
-    update();
-    window.addEventListener("online", update);
-    window.addEventListener("offline", update);
-    return () => {
-      window.removeEventListener("online", update);
-      window.removeEventListener("offline", update);
-    };
-  }, []);
-  return online;
-}
-
 export function AppShell({ children, title, transparentHeader }: { children: ReactNode; title?: string; transparentHeader?: boolean }) {
   const location = useLocation();
-  const online = useOnline();
-  const [isClient, setIsClient] = useState(false);
-
-  useEffect(() => { setIsClient(true); }, []);
+  const { online, offline, simulated, hydrated } = useConnectivity();
 
   useEffect(() => { stopSpeaking(); }, [location.pathname]);
 
@@ -63,14 +46,20 @@ export function AppShell({ children, title, transparentHeader }: { children: Rea
               <div className="text-[11px] text-muted-foreground -mt-0.5">AI Patient Advocate</div>
             </div>
           </Link>
-          <Link to="/profile" className="size-10 rounded-full bg-card border grid place-items-center hover:bg-secondary transition-colors" aria-label="Profile">
-            <User className="size-5 text-primary" />
-          </Link>
+          <div className="flex items-center gap-2">
+            <StatusIndicator online={online} simulated={simulated} hydrated={hydrated} />
+            <Link to="/profile" className="size-10 rounded-full bg-card border grid place-items-center hover:bg-secondary transition-colors" aria-label="Profile">
+              <User className="size-5 text-primary" />
+            </Link>
+          </div>
         </div>
-        {!online && (
-          <div className="bg-warning/15 text-foreground text-center text-xs font-medium py-1.5 px-4 border-y border-warning/30">
-            <span className="inline-block size-1.5 rounded-full bg-warning mr-2 align-middle" />
-            Offline Mode Active — your data is safe
+        {offline && (
+          <div className="bg-primary/10 text-primary text-center text-[12.5px] font-medium py-2 px-4 border-y border-primary/20 flex items-center justify-center gap-2">
+            <CloudOff className="size-4" />
+            <span>
+              <strong className="font-semibold">Offline Mode Active</strong>
+              <span className="text-foreground/70 font-normal"> — Your health information remains available{simulated ? " (demo)" : ""}.</span>
+            </span>
           </div>
         )}
         {title && (
@@ -115,6 +104,30 @@ export function AppShell({ children, title, transparentHeader }: { children: Rea
           })}
         </div>
       </nav>
+    </div>
+  );
+}
+
+function StatusIndicator({ online, simulated, hydrated }: { online: boolean; simulated: boolean; hydrated: boolean }) {
+  // Connecting (gray) until we know
+  const state = !hydrated ? "connecting" : online ? "online" : "offline";
+  const label =
+    state === "online" ? "Online" :
+    state === "offline" ? (simulated ? "Offline (demo)" : "Offline Ready") :
+    "Connecting";
+  const Icon = state === "online" ? Cloud : state === "offline" ? CloudOff : Wifi;
+  const tone =
+    state === "online" ? "bg-success/10 text-success border-success/30" :
+    state === "offline" ? "bg-primary/10 text-primary border-primary/30" :
+    "bg-secondary text-muted-foreground border-border";
+  return (
+    <div
+      className={`hidden sm:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${tone}`}
+      title={label}
+      aria-label={`Connection status: ${label}`}
+    >
+      <Icon className="size-3.5" />
+      {label}
     </div>
   );
 }
