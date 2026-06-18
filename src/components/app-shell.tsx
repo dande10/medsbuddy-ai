@@ -1,7 +1,6 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { Home, MessageCircle, Pill, Stethoscope, Clock, Siren, User } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { stopSpeaking } from "@/lib/voice";
 
 const navItems = [
@@ -31,6 +30,9 @@ function useOnline() {
 export function AppShell({ children, title, transparentHeader }: { children: ReactNode; title?: string; transparentHeader?: boolean }) {
   const location = useLocation();
   const online = useOnline();
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => { setIsClient(true); }, []);
 
   useEffect(() => { stopSpeaking(); }, [location.pathname]);
 
@@ -78,18 +80,9 @@ export function AppShell({ children, title, transparentHeader }: { children: Rea
         )}
       </header>
 
-      <AnimatePresence mode="wait">
-        <motion.main
-          key={location.pathname}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-          className="flex-1 mx-auto max-w-2xl w-full px-5 py-5 pb-28"
-        >
-          {children}
-        </motion.main>
-      </AnimatePresence>
+      <main className="flex-1 mx-auto max-w-2xl w-full px-5 py-5 pb-28">
+        {children}
+      </main>
 
       <nav className="fixed bottom-0 inset-x-0 z-40 bg-background/85 backdrop-blur-xl border-t border-border/60" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="mx-auto max-w-2xl grid grid-cols-6">
@@ -104,11 +97,7 @@ export function AppShell({ children, title, transparentHeader }: { children: Rea
                 className="relative flex flex-col items-center gap-1 pt-2.5 pb-2 text-[10px] font-medium"
               >
                 {active && (
-                  <motion.span
-                    layoutId="navActivePill"
-                    className="absolute top-0 left-1/2 -translate-x-1/2 h-[3px] w-8 rounded-full bg-primary"
-                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                  />
+                  <span className="absolute top-0 left-1/2 -translate-x-1/2 h-[3px] w-8 rounded-full bg-primary" />
                 )}
                 <Icon
                   className={`size-[22px] transition-colors ${

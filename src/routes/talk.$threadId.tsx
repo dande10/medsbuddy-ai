@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router";
-import { AppShell } from "@/components/app-shell";
 import { MicButton } from "@/components/mic-button";
 import { AiOrb } from "@/components/ai-orb";
 import { useApp, type ChatMessage } from "@/lib/store";
@@ -89,6 +88,7 @@ function TalkThreadPage() {
   const [autoListen, setAutoListen] = useState(false);
   const [input, setInput] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Mark this thread active when it loads
@@ -104,6 +104,10 @@ function TalkThreadPage() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages.length, busy]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const sortedThreads = useMemo(
     () => [...threads].sort((a, b) => b.updatedAt - a.updatedAt),
@@ -184,8 +188,12 @@ function TalkThreadPage() {
     }
   };
 
+  if (!mounted) {
+    return <div className="py-20 text-center text-sm text-muted-foreground">Opening MedsBuddy…</div>;
+  }
+
   return (
-    <AppShell>
+    <>
       <div className="flex flex-col" style={{ minHeight: "calc(100vh - 200px)" }}>
         {/* AI header */}
         <div className="flex items-center gap-3 mb-4">
@@ -382,6 +390,6 @@ function TalkThreadPage() {
           </>
         )}
       </AnimatePresence>
-    </AppShell>
+    </>
   );
 }
