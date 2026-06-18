@@ -88,7 +88,7 @@ function TalkThreadPage() {
   const [autoListen, setAutoListen] = useState(false);
   const [input, setInput] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Mark this thread active when it loads
@@ -96,18 +96,22 @@ function TalkThreadPage() {
     if (thread) setActiveThread(thread.id);
   }, [thread, setActiveThread]);
 
-  // If the thread was deleted from another tab, bounce back to /talk to resolve.
+  // Wait for the persisted store to hydrate before deciding anything.
   useEffect(() => {
-    if (!thread) navigate({ to: "/talk", replace: true });
-  }, [thread, navigate]);
+    const unsub = useApp.persist.onFinishHydration(() => setHydrated(true));
+    if (useApp.persist.hasHydrated()) setHydrated(true);
+    return () => unsub();
+  }, []);
+
+  // If, after hydration, the thread still doesn't exist, bounce back to /talk
+  // so the index route can create or pick a valid one.
+  useEffect(() => {
+    if (hydrated && !thread) navigate({ to: "/talk", replace: true });
+  }, [hydrated, thread, navigate]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages.length, busy]);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const sortedThreads = useMemo(
     () => [...threads].sort((a, b) => b.updatedAt - a.updatedAt),
@@ -188,7 +192,7 @@ function TalkThreadPage() {
     }
   };
 
-  if (!mounted) {
+  if (!hydrated || !thread) {
     return <div className="py-20 text-center text-sm text-muted-foreground">Opening MedsBuddy…</div>;
   }
 
