@@ -113,40 +113,13 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-function ClientGate({ children }: { children: ReactNode }) {
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    void (useApp as any).persist.rehydrate();
-    setReady(true);
-  }, []);
-
-  if (!ready) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center px-4">
-        <div className="text-center">
-          <div className="relative size-14 rounded-2xl overflow-hidden grid place-items-center shadow-elegant mx-auto mb-4">
-            <div className="absolute inset-0 gradient-hero" />
-            <div className="relative font-bold text-primary-foreground text-2xl tracking-tight">M</div>
-          </div>
-          <div className="text-xl font-bold tracking-tight">MedsBuddy</div>
-          <div className="text-sm text-muted-foreground mt-1">Loading your health companion…</div>
-        </div>
-      </div>
-    );
-  }
-
-  return children;
-}
-
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ClientGate>
-        <Outlet />
-      </ClientGate>
+      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+      <Outlet />
     </QueryClientProvider>
   );
 }
