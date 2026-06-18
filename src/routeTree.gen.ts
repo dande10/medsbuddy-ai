@@ -17,6 +17,7 @@ import { Route as EmergencyRouteImport } from './routes/emergency'
 import { Route as DoctorRouteImport } from './routes/doctor'
 import { Route as CaregiverRouteImport } from './routes/caregiver'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TalkThreadIdRouteImport } from './routes/talk.$threadId'
 import { Route as ApiTtsRouteImport } from './routes/api/tts'
 
 const TalkRoute = TalkRouteImport.update({
@@ -59,6 +60,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TalkThreadIdRoute = TalkThreadIdRouteImport.update({
+  id: '/$threadId',
+  path: '/$threadId',
+  getParentRoute: () => TalkRoute,
+} as any)
 const ApiTtsRoute = ApiTtsRouteImport.update({
   id: '/api/tts',
   path: '/api/tts',
@@ -73,8 +79,9 @@ export interface FileRoutesByFullPath {
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
-  '/talk': typeof TalkRoute
+  '/talk': typeof TalkRouteWithChildren
   '/api/tts': typeof ApiTtsRoute
+  '/talk/$threadId': typeof TalkThreadIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -84,8 +91,9 @@ export interface FileRoutesByTo {
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
-  '/talk': typeof TalkRoute
+  '/talk': typeof TalkRouteWithChildren
   '/api/tts': typeof ApiTtsRoute
+  '/talk/$threadId': typeof TalkThreadIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -96,8 +104,9 @@ export interface FileRoutesById {
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
-  '/talk': typeof TalkRoute
+  '/talk': typeof TalkRouteWithChildren
   '/api/tts': typeof ApiTtsRoute
+  '/talk/$threadId': typeof TalkThreadIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
     | '/reminders'
     | '/talk'
     | '/api/tts'
+    | '/talk/$threadId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/reminders'
     | '/talk'
     | '/api/tts'
+    | '/talk/$threadId'
   id:
     | '__root__'
     | '/'
@@ -133,6 +144,7 @@ export interface FileRouteTypes {
     | '/reminders'
     | '/talk'
     | '/api/tts'
+    | '/talk/$threadId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -143,7 +155,7 @@ export interface RootRouteChildren {
   MemoryRoute: typeof MemoryRoute
   ProfileRoute: typeof ProfileRoute
   RemindersRoute: typeof RemindersRoute
-  TalkRoute: typeof TalkRoute
+  TalkRoute: typeof TalkRouteWithChildren
   ApiTtsRoute: typeof ApiTtsRoute
 }
 
@@ -205,6 +217,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/talk/$threadId': {
+      id: '/talk/$threadId'
+      path: '/$threadId'
+      fullPath: '/talk/$threadId'
+      preLoaderRoute: typeof TalkThreadIdRouteImport
+      parentRoute: typeof TalkRoute
+    }
     '/api/tts': {
       id: '/api/tts'
       path: '/api/tts'
@@ -215,6 +234,16 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface TalkRouteChildren {
+  TalkThreadIdRoute: typeof TalkThreadIdRoute
+}
+
+const TalkRouteChildren: TalkRouteChildren = {
+  TalkThreadIdRoute: TalkThreadIdRoute,
+}
+
+const TalkRouteWithChildren = TalkRoute._addFileChildren(TalkRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CaregiverRoute: CaregiverRoute,
@@ -223,7 +252,7 @@ const rootRouteChildren: RootRouteChildren = {
   MemoryRoute: MemoryRoute,
   ProfileRoute: ProfileRoute,
   RemindersRoute: RemindersRoute,
-  TalkRoute: TalkRoute,
+  TalkRoute: TalkRouteWithChildren,
   ApiTtsRoute: ApiTtsRoute,
 }
 export const routeTree = rootRouteImport
