@@ -184,7 +184,7 @@ function TalkThreadPage() {
   };
 
   return (
-    <AppShell>
+    <>
       <div className="flex flex-col" style={{ minHeight: "calc(100vh - 200px)" }}>
         {/* AI header */}
         <div className="flex items-center gap-3 mb-4">
@@ -381,6 +381,6 @@ function TalkThreadPage() {
           </>
         )}
       </AnimatePresence>
-    </AppShell>
+    </>
   );
 }
