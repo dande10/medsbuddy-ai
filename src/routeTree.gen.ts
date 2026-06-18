@@ -14,6 +14,7 @@ import { Route as RemindersRouteImport } from './routes/reminders'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as EmergencyRouteImport } from './routes/emergency'
 import { Route as DoctorRouteImport } from './routes/doctor'
+import { Route as CaregiverRouteImport } from './routes/caregiver'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiTtsRouteImport } from './routes/api/tts'
 
@@ -42,6 +43,11 @@ const DoctorRoute = DoctorRouteImport.update({
   path: '/doctor',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CaregiverRoute = CaregiverRouteImport.update({
+  id: '/caregiver',
+  path: '/caregiver',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -55,6 +61,7 @@ const ApiTtsRoute = ApiTtsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/caregiver': typeof CaregiverRoute
   '/doctor': typeof DoctorRoute
   '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
@@ -64,6 +71,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/caregiver': typeof CaregiverRoute
   '/doctor': typeof DoctorRoute
   '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
@@ -74,6 +82,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/caregiver': typeof CaregiverRoute
   '/doctor': typeof DoctorRoute
   '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
@@ -85,6 +94,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/caregiver'
     | '/doctor'
     | '/emergency'
     | '/memory'
@@ -94,6 +104,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/caregiver'
     | '/doctor'
     | '/emergency'
     | '/memory'
@@ -103,6 +114,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/caregiver'
     | '/doctor'
     | '/emergency'
     | '/memory'
@@ -113,6 +125,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CaregiverRoute: typeof CaregiverRoute
   DoctorRoute: typeof DoctorRoute
   EmergencyRoute: typeof EmergencyRoute
   MemoryRoute: typeof MemoryRoute
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DoctorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/caregiver': {
+      id: '/caregiver'
+      path: '/caregiver'
+      fullPath: '/caregiver'
+      preLoaderRoute: typeof CaregiverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -177,6 +197,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CaregiverRoute: CaregiverRoute,
   DoctorRoute: DoctorRoute,
   EmergencyRoute: EmergencyRoute,
   MemoryRoute: MemoryRoute,
