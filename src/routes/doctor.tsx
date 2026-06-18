@@ -347,18 +347,40 @@ function VisitWorkflow({
   };
 
   const handleSaveVisit = (payload: {
-    summary: string; medications: string; carePlan: string; followUp: string; questionsAnswered: string; notes: string;
+    topicsDiscussed: string;
+    medicationChanges: string;
+    newRecommendations: string;
+    testsOrdered: string;
+    followUpAppointments: string;
+    actionItems: string;
+    notes: string;
   }) => {
+    // Build a short Visit Outcome summary that is distinct from the patient's pre-visit summary.
+    const outcomeBits = [
+      payload.topicsDiscussed && `Discussed: ${payload.topicsDiscussed}`,
+      payload.medicationChanges && `Medication changes: ${payload.medicationChanges}`,
+      payload.newRecommendations && `Recommendations: ${payload.newRecommendations}`,
+      payload.testsOrdered && `Tests ordered: ${payload.testsOrdered}`,
+      payload.followUpAppointments && `Follow-up: ${payload.followUpAppointments}`,
+      payload.actionItems && `Action items: ${payload.actionItems}`,
+    ].filter(Boolean) as string[];
+    const outcomeSummary =
+      outcomeBits.length > 0
+        ? outcomeBits.join(". ")
+        : `Visit outcome with ${doctorName || "doctor"}${specialty ? ` (${specialty})` : ""} on ${new Date().toLocaleDateString()}.`;
     onSaveVisit({
       doctor: doctorName.trim() || "Unspecified doctor",
       specialty: specialty.trim() || undefined,
       durationSec: seconds || undefined,
       audioDataUrl,
-      summary: payload.summary.trim(),
-      medications: payload.medications.trim() || undefined,
-      carePlan: payload.carePlan.trim() || undefined,
-      followUp: payload.followUp.trim() || undefined,
-      questionsAnswered: payload.questionsAnswered.trim() || undefined,
+      summary: outcomeSummary,
+      patientSummary: patientSummary?.trim() || undefined,
+      topicsDiscussed: payload.topicsDiscussed.trim() || undefined,
+      medicationChanges: payload.medicationChanges.trim() || undefined,
+      newRecommendations: payload.newRecommendations.trim() || undefined,
+      testsOrdered: payload.testsOrdered.trim() || undefined,
+      followUpAppointments: payload.followUpAppointments.trim() || undefined,
+      actionItems: payload.actionItems.trim() || undefined,
       notes: payload.notes.trim() || undefined,
       recorded: !!audioDataUrl || seconds > 0,
     });
@@ -473,10 +495,7 @@ function VisitWorkflow({
           duration={seconds}
           audioUrl={audioUrl}
           doctorName={doctorName || "your doctor"}
-          defaults={{
-            summary: `Visit with ${doctorName || "doctor"}${specialty ? ` (${specialty})` : ""} on ${new Date().toLocaleDateString()}.`,
-            medications: meds.map((m) => `${m.name} ${m.dosage}`).join(", "),
-          }}
+          patientSummary={patientSummary}
           onCancel={() => {
             if (audioUrl) URL.revokeObjectURL(audioUrl);
             setAudioUrl(null);
