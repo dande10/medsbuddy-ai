@@ -869,6 +869,9 @@ function VisitDetailDialog({
         </div>
 
         <div className="overflow-y-auto p-5 space-y-4">
+          {/* Visit timeline */}
+          <VisitTimeline visit={visit} />
+
           {/* Explanation */}
           {(explanation || loadingExplain || explainError) && (
             <Block icon={Sparkles} title="MedsBuddy explains">
