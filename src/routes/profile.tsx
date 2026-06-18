@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { useApp, type Profile } from "@/lib/store";
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, CloudOff } from "lucide-react";
 
 export const Route = createFileRoute("/profile")({
   head: () => ({
@@ -15,7 +15,7 @@ export const Route = createFileRoute("/profile")({
 });
 
 function ProfilePage() {
-  const { profile, setProfile } = useApp();
+  const { profile, setProfile, simulateOffline, setSimulateOffline } = useApp();
   const [draft, setDraft] = useState<Profile>(profile);
   const [saved, setSaved] = useState(false);
 
@@ -31,6 +31,27 @@ function ProfilePage() {
       <p className="text-sm text-muted-foreground mb-5">
         This information is stored on your device and used for AI replies, the doctor summary, and the emergency QR.
       </p>
+
+      {/* Demo / Offline toggle */}
+      <div className="rounded-2xl border bg-card shadow-card p-4 mb-5 flex items-center gap-3">
+        <div className={`size-10 rounded-xl grid place-items-center shrink-0 ${simulateOffline ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}>
+          <CloudOff className="size-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-[15px]">Simulate Offline Mode</div>
+          <div className="text-[12px] text-muted-foreground">Demo offline behavior without turning Wi-Fi off. Doctor Summary, QR, and local data keep working.</div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={simulateOffline}
+          onClick={() => setSimulateOffline(!simulateOffline)}
+          className={`relative h-7 w-12 rounded-full transition-colors shrink-0 ${simulateOffline ? "bg-primary" : "bg-secondary border"}`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 size-6 rounded-full bg-background shadow transition-transform ${simulateOffline ? "translate-x-5" : "translate-x-0"}`}
+          />
+        </button>
+      </div>
 
       <div className="space-y-3">
         <F label="Full name"><I value={draft.name} onChange={(v) => upd("name", v)} placeholder="Jane Doe" /></F>
