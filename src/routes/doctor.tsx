@@ -264,10 +264,12 @@ type Stage = "ask" | "patient-declined" | "doctor-consent" | "recording" | "summ
 
 function VisitWorkflow({
   meds,
+  patientSummary,
   onSaveVisit,
   onQuickNote,
 }: {
   meds: { name: string; dosage: string }[];
+  patientSummary: string;
   onSaveVisit: (v: Omit<VisitRecord, "id" | "at"> & { at?: number }) => void;
   onQuickNote: (text: string) => void;
 }) {
