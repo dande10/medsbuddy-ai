@@ -20,6 +20,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as TalkIndexRouteImport } from './routes/talk.index'
 import { Route as DoctorIndexRouteImport } from './routes/doctor.index'
 import { Route as TalkThreadIdRouteImport } from './routes/talk.$threadId'
+import { Route as DoctorVisitModeRouteImport } from './routes/doctor.visit-mode'
 import { Route as DoctorRecordRouteImport } from './routes/doctor.record'
 import { Route as ApiTtsRouteImport } from './routes/api/tts'
 
@@ -78,6 +79,11 @@ const TalkThreadIdRoute = TalkThreadIdRouteImport.update({
   path: '/$threadId',
   getParentRoute: () => TalkRoute,
 } as any)
+const DoctorVisitModeRoute = DoctorVisitModeRouteImport.update({
+  id: '/visit-mode',
+  path: '/visit-mode',
+  getParentRoute: () => DoctorRoute,
+} as any)
 const DoctorRecordRoute = DoctorRecordRouteImport.update({
   id: '/record',
   path: '/record',
@@ -100,6 +106,7 @@ export interface FileRoutesByFullPath {
   '/talk': typeof TalkRouteWithChildren
   '/api/tts': typeof ApiTtsRoute
   '/doctor/record': typeof DoctorRecordRoute
+  '/doctor/visit-mode': typeof DoctorVisitModeRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/doctor/': typeof DoctorIndexRoute
   '/talk/': typeof TalkIndexRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByTo {
   '/reminders': typeof RemindersRoute
   '/api/tts': typeof ApiTtsRoute
   '/doctor/record': typeof DoctorRecordRoute
+  '/doctor/visit-mode': typeof DoctorVisitModeRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/doctor': typeof DoctorIndexRoute
   '/talk': typeof TalkIndexRoute
@@ -129,6 +137,7 @@ export interface FileRoutesById {
   '/talk': typeof TalkRouteWithChildren
   '/api/tts': typeof ApiTtsRoute
   '/doctor/record': typeof DoctorRecordRoute
+  '/doctor/visit-mode': typeof DoctorVisitModeRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/doctor/': typeof DoctorIndexRoute
   '/talk/': typeof TalkIndexRoute
@@ -146,6 +155,7 @@ export interface FileRouteTypes {
     | '/talk'
     | '/api/tts'
     | '/doctor/record'
+    | '/doctor/visit-mode'
     | '/talk/$threadId'
     | '/doctor/'
     | '/talk/'
@@ -159,6 +169,7 @@ export interface FileRouteTypes {
     | '/reminders'
     | '/api/tts'
     | '/doctor/record'
+    | '/doctor/visit-mode'
     | '/talk/$threadId'
     | '/doctor'
     | '/talk'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/talk'
     | '/api/tts'
     | '/doctor/record'
+    | '/doctor/visit-mode'
     | '/talk/$threadId'
     | '/doctor/'
     | '/talk/'
@@ -270,6 +282,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TalkThreadIdRouteImport
       parentRoute: typeof TalkRoute
     }
+    '/doctor/visit-mode': {
+      id: '/doctor/visit-mode'
+      path: '/visit-mode'
+      fullPath: '/doctor/visit-mode'
+      preLoaderRoute: typeof DoctorVisitModeRouteImport
+      parentRoute: typeof DoctorRoute
+    }
     '/doctor/record': {
       id: '/doctor/record'
       path: '/record'
@@ -289,11 +308,13 @@ declare module '@tanstack/react-router' {
 
 interface DoctorRouteChildren {
   DoctorRecordRoute: typeof DoctorRecordRoute
+  DoctorVisitModeRoute: typeof DoctorVisitModeRoute
   DoctorIndexRoute: typeof DoctorIndexRoute
 }
 
 const DoctorRouteChildren: DoctorRouteChildren = {
   DoctorRecordRoute: DoctorRecordRoute,
+  DoctorVisitModeRoute: DoctorVisitModeRoute,
   DoctorIndexRoute: DoctorIndexRoute,
 }
 

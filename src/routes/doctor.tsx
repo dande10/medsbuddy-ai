@@ -121,6 +121,21 @@ export function DoctorPage() {
         </div>
       </motion.div>
 
+      {!empty && (
+        <motion.button
+          whileTap={{ scale: 0.98 }}
+          onClick={() => navigate({ to: "/doctor/visit-mode" })}
+          className="w-full rounded-2xl gradient-hero text-primary-foreground py-5 px-4 text-lg font-semibold inline-flex items-center justify-center gap-3 shadow-elegant mb-4 relative overflow-hidden group"
+        >
+          <span className="absolute inset-0 bg-white/0 group-active:bg-white/10 transition" />
+          <Sparkles className="size-6" />
+          <span className="flex flex-col items-start leading-tight text-left">
+            <span>Start Doctor Visit Mode</span>
+            <span className="text-[11px] opacity-80 font-normal">Hands-free guided flow · review → speak → consent → record → summary</span>
+          </span>
+        </motion.button>
+      )}
+
       {empty ? (
         <EmptyState
           title="Let's prepare your first briefing"
