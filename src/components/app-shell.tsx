@@ -1,7 +1,6 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { Home, MessageCircle, Pill, Stethoscope, Clock, Siren, User } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { stopSpeaking } from "@/lib/voice";
 
 const navItems = [
