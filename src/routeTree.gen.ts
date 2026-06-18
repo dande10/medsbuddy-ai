@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TalkRouteImport } from './routes/talk'
 import { Route as RemindersRouteImport } from './routes/reminders'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as EmergencyRouteImport } from './routes/emergency'
 import { Route as DoctorRouteImport } from './routes/doctor'
@@ -26,6 +27,11 @@ const TalkRoute = TalkRouteImport.update({
 const RemindersRoute = RemindersRouteImport.update({
   id: '/reminders',
   path: '/reminders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MemoryRoute = MemoryRouteImport.update({
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/doctor': typeof DoctorRoute
   '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
+  '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
   '/talk': typeof TalkRoute
   '/api/tts': typeof ApiTtsRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/doctor': typeof DoctorRoute
   '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
+  '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
   '/talk': typeof TalkRoute
   '/api/tts': typeof ApiTtsRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/doctor': typeof DoctorRoute
   '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
+  '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
   '/talk': typeof TalkRoute
   '/api/tts': typeof ApiTtsRoute
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/doctor'
     | '/emergency'
     | '/memory'
+    | '/profile'
     | '/reminders'
     | '/talk'
     | '/api/tts'
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/doctor'
     | '/emergency'
     | '/memory'
+    | '/profile'
     | '/reminders'
     | '/talk'
     | '/api/tts'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/doctor'
     | '/emergency'
     | '/memory'
+    | '/profile'
     | '/reminders'
     | '/talk'
     | '/api/tts'
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   DoctorRoute: typeof DoctorRoute
   EmergencyRoute: typeof EmergencyRoute
   MemoryRoute: typeof MemoryRoute
+  ProfileRoute: typeof ProfileRoute
   RemindersRoute: typeof RemindersRoute
   TalkRoute: typeof TalkRoute
   ApiTtsRoute: typeof ApiTtsRoute
@@ -148,6 +161,13 @@ declare module '@tanstack/react-router' {
       path: '/reminders'
       fullPath: '/reminders'
       preLoaderRoute: typeof RemindersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/memory': {
@@ -201,6 +221,7 @@ const rootRouteChildren: RootRouteChildren = {
   DoctorRoute: DoctorRoute,
   EmergencyRoute: EmergencyRoute,
   MemoryRoute: MemoryRoute,
+  ProfileRoute: ProfileRoute,
   RemindersRoute: RemindersRoute,
   TalkRoute: TalkRoute,
   ApiTtsRoute: ApiTtsRoute,
