@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TalkRouteImport } from './routes/talk'
 import { Route as RemindersRouteImport } from './routes/reminders'
+import { Route as DoctorRouteImport } from './routes/doctor'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiTtsRouteImport } from './routes/api/tts'
 
@@ -22,6 +23,11 @@ const TalkRoute = TalkRouteImport.update({
 const RemindersRoute = RemindersRouteImport.update({
   id: '/reminders',
   path: '/reminders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DoctorRoute = DoctorRouteImport.update({
+  id: '/doctor',
+  path: '/doctor',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -37,12 +43,14 @@ const ApiTtsRoute = ApiTtsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/doctor': typeof DoctorRoute
   '/reminders': typeof RemindersRoute
   '/talk': typeof TalkRoute
   '/api/tts': typeof ApiTtsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/doctor': typeof DoctorRoute
   '/reminders': typeof RemindersRoute
   '/talk': typeof TalkRoute
   '/api/tts': typeof ApiTtsRoute
@@ -50,20 +58,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/doctor': typeof DoctorRoute
   '/reminders': typeof RemindersRoute
   '/talk': typeof TalkRoute
   '/api/tts': typeof ApiTtsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/reminders' | '/talk' | '/api/tts'
+  fullPaths: '/' | '/doctor' | '/reminders' | '/talk' | '/api/tts'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/reminders' | '/talk' | '/api/tts'
-  id: '__root__' | '/' | '/reminders' | '/talk' | '/api/tts'
+  to: '/' | '/doctor' | '/reminders' | '/talk' | '/api/tts'
+  id: '__root__' | '/' | '/doctor' | '/reminders' | '/talk' | '/api/tts'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DoctorRoute: typeof DoctorRoute
   RemindersRoute: typeof RemindersRoute
   TalkRoute: typeof TalkRoute
   ApiTtsRoute: typeof ApiTtsRoute
@@ -85,6 +95,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RemindersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/doctor': {
+      id: '/doctor'
+      path: '/doctor'
+      fullPath: '/doctor'
+      preLoaderRoute: typeof DoctorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -104,6 +121,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DoctorRoute: DoctorRoute,
   RemindersRoute: RemindersRoute,
   TalkRoute: TalkRoute,
   ApiTtsRoute: ApiTtsRoute,
