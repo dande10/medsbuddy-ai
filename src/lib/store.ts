@@ -64,6 +64,19 @@ export interface DoctorSummary {
   at: number;
 }
 
+export interface HealthNote {
+  id: string;
+  text: string;
+  at: number;
+}
+
+export interface DoctorQuestion {
+  id: string;
+  text: string;
+  asked: boolean;
+  at: number;
+}
+
 interface State {
   profile: Profile;
   meds: Medication[];
@@ -73,6 +86,8 @@ interface State {
   threads: ChatThread[];
   activeThreadId: string | null;
   summaries: DoctorSummary[];
+  notes: HealthNote[];
+  questions: DoctorQuestion[];
   setProfile: (p: Partial<Profile>) => void;
   addMed: (m: Omit<Medication, "id" | "createdAt">) => void;
   removeMed: (id: string) => void;
@@ -86,6 +101,11 @@ interface State {
   deleteThread: (threadId: string) => void;
   renameThread: (threadId: string, title: string) => void;
   addSummary: (text: string) => DoctorSummary;
+  addNote: (text: string) => HealthNote;
+  removeNote: (id: string) => void;
+  addQuestion: (text: string) => DoctorQuestion;
+  toggleQuestion: (id: string) => void;
+  removeQuestion: (id: string) => void;
 }
 
 const id = () => Math.random().toString(36).slice(2, 10);
@@ -111,6 +131,8 @@ export const useApp = create<State>()(
       threads: [],
       activeThreadId: null,
       summaries: [],
+      notes: [],
+      questions: [],
       setProfile: (p) => set({ profile: { ...get().profile, ...p } }),
       addMed: (m) =>
         set({ meds: [...get().meds, { ...m, id: id(), createdAt: Date.now() }] }),
@@ -173,6 +195,24 @@ export const useApp = create<State>()(
         set({ summaries: [s, ...get().summaries] });
         return s;
       },
+      addNote: (text) => {
+        const n: HealthNote = { id: id(), text, at: Date.now() };
+        set({ notes: [n, ...get().notes] });
+        return n;
+      },
+      removeNote: (nid) => set({ notes: get().notes.filter((n) => n.id !== nid) }),
+      addQuestion: (text) => {
+        const q: DoctorQuestion = { id: id(), text, asked: false, at: Date.now() };
+        set({ questions: [q, ...get().questions] });
+        return q;
+      },
+      toggleQuestion: (qid) =>
+        set({
+          questions: get().questions.map((q) =>
+            q.id === qid ? { ...q, asked: !q.asked } : q,
+          ),
+        }),
+      removeQuestion: (qid) => set({ questions: get().questions.filter((q) => q.id !== qid) }),
     }),
     {
       name: "medsbuddy-v1",
