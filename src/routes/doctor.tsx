@@ -548,44 +548,92 @@ function VisitWorkflow({
 }
 
 function VisitSummaryForm({
-  duration, audioUrl, doctorName, defaults, onCancel, onSave,
+  duration, audioUrl, doctorName, patientSummary, onCancel, onSave,
 }: {
   duration: number;
   audioUrl: string | null;
   doctorName: string;
-  defaults: { summary: string; medications: string };
+  patientSummary?: string;
   onCancel: () => void;
-  onSave: (p: { summary: string; medications: string; carePlan: string; followUp: string; questionsAnswered: string; notes: string }) => void;
+  onSave: (p: {
+    topicsDiscussed: string;
+    medicationChanges: string;
+    newRecommendations: string;
+    testsOrdered: string;
+    followUpAppointments: string;
+    actionItems: string;
+    notes: string;
+  }) => void;
 }) {
-  const [summary, setSummary] = useState(defaults.summary);
-  const [medications, setMedications] = useState(defaults.medications);
-  const [carePlan, setCarePlan] = useState("");
-  const [followUp, setFollowUp] = useState("");
-  const [questionsAnswered, setQuestionsAnswered] = useState("");
+  const [topicsDiscussed, setTopicsDiscussed] = useState("");
+  const [medicationChanges, setMedicationChanges] = useState("");
+  const [newRecommendations, setNewRecommendations] = useState("");
+  const [testsOrdered, setTestsOrdered] = useState("");
+  const [followUpAppointments, setFollowUpAppointments] = useState("");
+  const [actionItems, setActionItems] = useState("");
   const [notes, setNotes] = useState("");
+  const [showPatientSummary, setShowPatientSummary] = useState(false);
+  const canSave =
+    topicsDiscussed.trim() ||
+    medicationChanges.trim() ||
+    newRecommendations.trim() ||
+    testsOrdered.trim() ||
+    followUpAppointments.trim() ||
+    actionItems.trim() ||
+    notes.trim();
   return (
     <div>
       <div className="rounded-xl bg-success/10 border border-success/30 p-3 mb-3 text-[13px]">
         <div className="font-semibold text-success">Recording finished</div>
-        <div className="text-muted-foreground">{formatDuration(duration)} with {doctorName}. Fill in what was discussed below.</div>
+        <div className="text-muted-foreground">
+          {formatDuration(duration)} with {doctorName}. Capture the <strong>visit outcome</strong> below — what the doctor said, decided, or recommended.
+        </div>
         {audioUrl && (
           <audio controls src={audioUrl} className="w-full mt-2" />
         )}
       </div>
-      <Field label="Visit summary"><textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Medications discussed"><textarea rows={2} value={medications} onChange={(e) => setMedications(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Care plan"><textarea rows={2} value={carePlan} onChange={(e) => setCarePlan(e.target.value)} placeholder="e.g. Continue current meds, monitor blood pressure" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Follow-up actions"><textarea rows={2} value={followUp} onChange={(e) => setFollowUp(e.target.value)} placeholder="e.g. Follow-up in 3 months, lab work" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Questions answered"><textarea rows={2} value={questionsAnswered} onChange={(e) => setQuestionsAnswered(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Appointment notes"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      {patientSummary && (
+        <div className="rounded-xl border bg-secondary/40 p-3 mb-3 text-[12px]">
+          <button
+            type="button"
+            onClick={() => setShowPatientSummary((s) => !s)}
+            className="font-semibold text-foreground inline-flex items-center gap-1"
+          >
+            <ChevronRight className={`size-3 transition ${showPatientSummary ? "rotate-90" : ""}`} />
+            Patient summary you brought to the visit
+          </button>
+          {showPatientSummary && (
+            <div className="mt-2 text-muted-foreground whitespace-pre-wrap">{patientSummary}</div>
+          )}
+          <div className="mt-1 text-[11px] text-muted-foreground">For reference only — please capture what the doctor said below, not what you told them.</div>
+        </div>
+      )}
+      <div className="text-[12px] font-semibold uppercase tracking-wide text-primary mb-1">Visit outcome</div>
+      <Field label="Topics discussed"><textarea rows={2} value={topicsDiscussed} onChange={(e) => setTopicsDiscussed(e.target.value)} placeholder="e.g. Blood pressure trends, headaches, sleep" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="Medication changes"><textarea rows={2} value={medicationChanges} onChange={(e) => setMedicationChanges(e.target.value)} placeholder="e.g. Increased lisinopril to 20mg; stopped ibuprofen" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="New recommendations"><textarea rows={2} value={newRecommendations} onChange={(e) => setNewRecommendations(e.target.value)} placeholder="e.g. Reduce salt, walk 20 min/day" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="Tests ordered"><textarea rows={2} value={testsOrdered} onChange={(e) => setTestsOrdered(e.target.value)} placeholder="e.g. Blood panel, EKG" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="Follow-up appointments"><textarea rows={2} value={followUpAppointments} onChange={(e) => setFollowUpAppointments(e.target.value)} placeholder="e.g. Cardiology in 3 months" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="Action items for me"><textarea rows={2} value={actionItems} onChange={(e) => setActionItems(e.target.value)} placeholder="e.g. Pick up new prescription, book lab" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="Other appointment notes"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
       <div className="flex gap-2 mt-3">
         <button onClick={onCancel} className="flex-1 rounded-xl bg-secondary text-secondary-foreground py-2.5 font-medium">Discard</button>
         <button
-          onClick={() => onSave({ summary, medications, carePlan, followUp, questionsAnswered, notes })}
-          disabled={!summary.trim()}
+          onClick={() =>
+            onSave({
+              topicsDiscussed,
+              medicationChanges,
+              newRecommendations,
+              testsOrdered,
+              followUpAppointments,
+              actionItems,
+              notes,
+            })
+          }
+          disabled={!canSave}
           className="flex-1 rounded-xl bg-primary text-primary-foreground py-2.5 font-semibold disabled:opacity-50"
         >
-          Save visit
+          Save visit outcome
         </button>
       </div>
     </div>
