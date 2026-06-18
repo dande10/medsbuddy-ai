@@ -186,6 +186,7 @@ export const useApp = create<State>()(
         }
         return localStorage;
       }),
+      skipHydration: true,
     },
   ),
 );
