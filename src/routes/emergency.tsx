@@ -73,6 +73,12 @@ function Emergency() {
           </div>
         </div>
         <p className="text-sm opacity-95 mt-3">Show this QR to paramedics, ER staff, or anyone helping. Works fully offline.</p>
+        <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur border border-white/25 px-3 py-1 text-[11px] font-semibold">
+          <span className="size-1.5 rounded-full bg-white" /> Emergency Access Available Offline
+        </div>
+        <p className="text-[12px] opacity-90 mt-2 max-w-sm">
+          Emergency QR and health information remain available even without internet.
+        </p>
       </motion.div>
 
       {!ready && (
