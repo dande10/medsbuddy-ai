@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useApp } from "@/lib/store";
 import { useEffect } from "react";
 
-export const Route = createFileRoute("/talk")({
+export const Route = createFileRoute("/talk/")({
   component: TalkRedirect,
 });
 
