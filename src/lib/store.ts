@@ -85,6 +85,16 @@ export interface VisitRecord {
   durationSec?: number;
   audioDataUrl?: string; // optional; omitted when too large
   summary: string;
+  // Pre-visit context (the summary the patient brought to the doctor)
+  patientSummary?: string;
+  // Visit Outcome — what actually happened during the appointment
+  topicsDiscussed?: string;
+  medicationChanges?: string;
+  newRecommendations?: string;
+  testsOrdered?: string;
+  followUpAppointments?: string;
+  actionItems?: string;
+  // Legacy / free-form
   medications?: string;
   carePlan?: string;
   followUp?: string;
