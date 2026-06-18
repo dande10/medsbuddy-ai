@@ -45,6 +45,8 @@ export function DoctorPage() {
   const [speaking, setSpeaking] = useState(false);
   const [draft, setDraft] = useState(generated);
   const [approved, setApproved] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (!approved) setDraft(generated);
@@ -82,6 +84,12 @@ export function DoctorPage() {
   };
 
   const empty = !profile.name && meds.length === 0 && symptoms.length === 0;
+
+  if (!mounted) {
+    return (
+      <div className="rounded-[28px] gradient-hero text-primary-foreground p-6 shadow-elegant mb-5 min-h-[180px]" />
+    );
+  }
 
   return (
     <>
