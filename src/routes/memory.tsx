@@ -13,6 +13,7 @@ import {
   Check,
   Trash2,
   X,
+  Mic,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
@@ -27,10 +28,10 @@ export const Route = createFileRoute("/memory")({
   component: Memory,
 });
 
-type Kind = "symptom" | "note" | "question" | "summary" | "medication" | "appt";
+type Kind = "symptom" | "note" | "question" | "summary" | "medication" | "appt" | "visit";
 type Item = { id: string; at: number; kind: Kind; title: string; sub?: string };
 
-type Filter = "all" | "symptom" | "note" | "question" | "summary" | "medication";
+type Filter = "all" | "symptom" | "note" | "question" | "summary" | "medication" | "visit";
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
@@ -38,6 +39,7 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "note", label: "Notes" },
   { id: "question", label: "Questions" },
   { id: "summary", label: "Summaries" },
+  { id: "visit", label: "Visits" },
   { id: "medication", label: "Medications" },
 ];
 
@@ -49,6 +51,7 @@ function Memory() {
     summaries,
     notes,
     questions,
+    visits,
     addSymptom,
     addNote,
     addQuestion,
@@ -103,10 +106,17 @@ function Memory() {
         title: `Appointment: ${a.doctor}`,
         sub: a.notes,
       })),
+      ...visits.map<Item>((v) => ({
+        id: "v" + v.id,
+        at: v.at,
+        kind: "visit",
+        title: `${v.specialty ? v.specialty + " visit" : "Doctor visit"}${v.doctor && v.doctor !== "Unspecified doctor" ? ` · ${v.doctor}` : ""}`,
+        sub: v.summary,
+      })),
     ];
     const filtered = filter === "all" ? all : all.filter((i) => i.kind === filter);
     return filtered.sort((a, b) => b.at - a.at);
-  }, [symptoms, notes, questions, summaries, doses, appointments, filter]);
+  }, [symptoms, notes, questions, summaries, doses, appointments, visits, filter]);
 
   return (
     <AppShell>
@@ -171,6 +181,7 @@ function Memory() {
               it.kind === "appt" ? Calendar :
               it.kind === "summary" ? FileText :
               it.kind === "question" ? HelpCircle :
+              it.kind === "visit" ? Mic :
               StickyNote;
             const tone =
               it.kind === "symptom" ? "bg-warning/15 text-warning" :
@@ -178,6 +189,7 @@ function Memory() {
               it.kind === "appt" ? "bg-success/15 text-success" :
               it.kind === "summary" ? "bg-success/15 text-success" :
               it.kind === "question" ? "bg-primary/15 text-primary" :
+              it.kind === "visit" ? "bg-primary/15 text-primary" :
               "bg-secondary text-secondary-foreground";
             const qid = it.kind === "question" ? it.id.slice(1) : null;
             const nid = it.kind === "note" ? it.id.slice(1) : null;

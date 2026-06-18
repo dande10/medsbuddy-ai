@@ -77,6 +77,22 @@ export interface DoctorQuestion {
   at: number;
 }
 
+export interface VisitRecord {
+  id: string;
+  at: number;
+  doctor: string;
+  specialty?: string;
+  durationSec?: number;
+  audioDataUrl?: string; // optional; omitted when too large
+  summary: string;
+  medications?: string;
+  carePlan?: string;
+  followUp?: string;
+  questionsAnswered?: string;
+  notes?: string;
+  recorded: boolean;
+}
+
 interface State {
   profile: Profile;
   meds: Medication[];
@@ -88,6 +104,7 @@ interface State {
   summaries: DoctorSummary[];
   notes: HealthNote[];
   questions: DoctorQuestion[];
+  visits: VisitRecord[];
   simulateOffline: boolean;
   setProfile: (p: Partial<Profile>) => void;
   addMed: (m: Omit<Medication, "id" | "createdAt">) => void;
@@ -107,6 +124,8 @@ interface State {
   addQuestion: (text: string) => DoctorQuestion;
   toggleQuestion: (id: string) => void;
   removeQuestion: (id: string) => void;
+  addVisit: (v: Omit<VisitRecord, "id" | "at"> & { at?: number }) => VisitRecord;
+  removeVisit: (id: string) => void;
   setSimulateOffline: (v: boolean) => void;
 }
 
@@ -135,6 +154,7 @@ export const useApp = create<State>()(
       summaries: [],
       notes: [],
       questions: [],
+      visits: [],
       simulateOffline: false,
       setProfile: (p) => set({ profile: { ...get().profile, ...p } }),
       addMed: (m) =>
@@ -216,6 +236,12 @@ export const useApp = create<State>()(
           ),
         }),
       removeQuestion: (qid) => set({ questions: get().questions.filter((q) => q.id !== qid) }),
+      addVisit: (v) => {
+        const visit: VisitRecord = { ...v, id: id(), at: v.at ?? Date.now() };
+        set({ visits: [visit, ...get().visits] });
+        return visit;
+      },
+      removeVisit: (vid) => set({ visits: get().visits.filter((v) => v.id !== vid) }),
       setSimulateOffline: (v) => set({ simulateOffline: v }),
     }),
     {
