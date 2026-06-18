@@ -1020,20 +1020,18 @@ function extractTopics(v: VisitRecord): { kind: TopicKind; label: string; detail
   const push = (kind: TopicKind, detail?: string) => {
     if (detail && detail.trim()) topics.push({ kind, label: TOPIC_LABEL[kind], detail: detail.trim() });
   };
-  push("medication", v.medications);
-  push("follow-up", v.followUp);
-  // Lifestyle / care plan
-  push("lifestyle", v.carePlan);
+  push("medication", v.medicationChanges ?? v.medications);
+  push("follow-up", v.followUpAppointments ?? v.followUp);
+  push("lifestyle", v.newRecommendations ?? v.carePlan);
+  push("test", v.testsOrdered);
+  push("symptom", v.topicsDiscussed);
   // Heuristic: pull "test" / "lab" mentions out of notes
-  const haystack = [v.summary, v.notes, v.questionsAnswered].filter(Boolean).join("\n");
-  if (/\b(lab|test|x-?ray|scan|blood work|ekg|mri|ct)\b/i.test(haystack)) {
+  const haystack = [v.summary, v.notes, v.actionItems, v.questionsAnswered].filter(Boolean).join("\n");
+  if (!v.testsOrdered && /\b(lab|test|x-?ray|scan|blood work|ekg|mri|ct)\b/i.test(haystack)) {
     push("test", findSentencesMatching(haystack, /lab|test|x-?ray|scan|blood work|ekg|mri|ct/i));
   }
   if (/\b(diagnos|condition|finding)\b/i.test(haystack)) {
     push("diagnosis", findSentencesMatching(haystack, /diagnos|condition|finding/i));
-  }
-  if (/\b(symptom|pain|dizz|head|nausea|fatigue|cough)\b/i.test(haystack)) {
-    push("symptom", findSentencesMatching(haystack, /symptom|pain|dizz|head|nausea|fatigue|cough/i));
   }
   return topics;
 }
@@ -1048,21 +1046,30 @@ function findSentencesMatching(text: string, re: RegExp): string {
 
 function buildTranscript(v: VisitRecord): string {
   const parts = [
-    `Visit summary: ${v.summary}`,
-    v.medications && `Medications discussed: ${v.medications}`,
-    v.carePlan && `Care plan: ${v.carePlan}`,
-    v.followUp && `Follow-up actions: ${v.followUp}`,
+    `Visit outcome summary: ${v.summary}`,
+    v.topicsDiscussed && `Topics discussed: ${v.topicsDiscussed}`,
+    v.medicationChanges && `Medication changes: ${v.medicationChanges}`,
+    v.newRecommendations && `New recommendations: ${v.newRecommendations}`,
+    v.testsOrdered && `Tests ordered: ${v.testsOrdered}`,
+    v.followUpAppointments && `Follow-up appointments: ${v.followUpAppointments}`,
+    v.actionItems && `Action items for the patient: ${v.actionItems}`,
+    v.medications && !v.medicationChanges && `Medications discussed: ${v.medications}`,
+    v.carePlan && !v.newRecommendations && `Care plan: ${v.carePlan}`,
+    v.followUp && !v.followUpAppointments && `Follow-up actions: ${v.followUp}`,
     v.questionsAnswered && `Questions answered: ${v.questionsAnswered}`,
     v.notes && `Appointment notes: ${v.notes}`,
+    v.patientSummary && `(For context only — patient summary brought to the visit: ${v.patientSummary})`,
   ].filter(Boolean);
   return parts.join("\n\n");
 }
 
 function buildSummaryNarration(v: VisitRecord): string {
   const bits: string[] = [v.summary];
-  if (v.medications) bits.push(`Medications discussed: ${v.medications}.`);
-  if (v.carePlan) bits.push(`Care plan: ${v.carePlan}.`);
-  if (v.followUp) bits.push(`Follow-up: ${v.followUp}.`);
+  if (v.medicationChanges) bits.push(`Medication changes: ${v.medicationChanges}.`);
+  if (v.newRecommendations) bits.push(`New recommendations: ${v.newRecommendations}.`);
+  if (v.testsOrdered) bits.push(`Tests ordered: ${v.testsOrdered}.`);
+  if (v.followUpAppointments) bits.push(`Follow-up: ${v.followUpAppointments}.`);
+  if (v.actionItems) bits.push(`Your action items: ${v.actionItems}.`);
   return bits.join(" ");
 }
 
