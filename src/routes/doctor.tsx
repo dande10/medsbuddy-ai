@@ -1102,6 +1102,61 @@ function Block({ icon: Icon, title, children }: { icon: typeof Pill; title: stri
   );
 }
 
+function VisitTimeline({ visit }: { visit: VisitRecord }) {
+  const hasPatient = !!visit.patientSummary?.trim();
+  const hasRecording = visit.recorded || !!visit.audioDataUrl;
+  const hasOutcome =
+    !!(visit.topicsDiscussed || visit.medicationChanges || visit.newRecommendations ||
+       visit.testsOrdered || visit.followUpAppointments || visit.actionItems);
+  const hasFollowUp = !!(visit.actionItems || visit.followUpAppointments);
+  const steps: { label: string; sub: string; done: boolean; icon: typeof Pill }[] = [
+    { label: "Patient Summary", sub: hasPatient ? "Brought to the visit" : "Not saved", done: hasPatient, icon: FileText },
+    { label: "Visit Recording", sub: hasRecording ? (visit.durationSec ? `Recorded · ${formatDuration(visit.durationSec)}` : "Recorded") : "No recording", done: hasRecording, icon: Mic },
+    { label: "Visit Outcome Summary", sub: hasOutcome ? "What the doctor said" : "Not captured", done: hasOutcome, icon: Sparkles },
+    { label: "Follow-Up Tasks", sub: hasFollowUp ? "Action items saved" : "None", done: hasFollowUp, icon: ClipboardList },
+  ];
+  return (
+    <div className="rounded-2xl border bg-background p-3.5">
+      <div className="flex items-center gap-2 mb-3">
+        <ListChecks className="size-4 text-primary" />
+        <h3 className="text-[13px] font-semibold">Visit timeline</h3>
+      </div>
+      <ol className="relative">
+        {steps.map((s, i) => {
+          const Icon = s.icon;
+          return (
+            <li key={i} className="flex gap-3 pb-3 last:pb-0 relative">
+              {i < steps.length - 1 && (
+                <span className={`absolute left-3.5 top-7 bottom-0 w-px ${s.done ? "bg-primary/40" : "bg-border"}`} />
+              )}
+              <div className={`size-7 rounded-full grid place-items-center shrink-0 ${s.done ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}>
+                <Icon className="size-3.5" />
+              </div>
+              <div className="flex-1 min-w-0 pt-0.5">
+                <div className={`text-[13px] font-semibold ${s.done ? "text-foreground" : "text-muted-foreground"}`}>{s.label}</div>
+                <div className="text-[11px] text-muted-foreground">{s.sub}</div>
+              </div>
+              {s.done && <Check className="size-4 text-success shrink-0 mt-1" />}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function _BlockDuplicate({ icon: Icon, title, children }: { icon: typeof Pill; title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border bg-background p-3.5">
+      <div className="flex items-center gap-2 mb-2">
+        <Icon className="size-4 text-primary" />
+        <h3 className="text-[13px] font-semibold">{title}</h3>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function formatDuration(s: number): string {
   const m = Math.floor(s / 60);
   const r = s % 60;
