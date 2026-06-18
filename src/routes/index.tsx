@@ -3,7 +3,7 @@ import { AppShell } from "@/components/app-shell";
 import { AiOrb } from "@/components/ai-orb";
 import { useApp, adherence } from "@/lib/store";
 import {
-  Pill, Stethoscope, Siren, Activity, Mic, FileText, QrCode, Plus, ChevronRight, ShieldCheck, AlertTriangle, CheckCircle2,
+  Pill, Stethoscope, Siren, Activity, Mic, FileText, QrCode, Plus, ChevronRight, ShieldCheck, AlertTriangle, CheckCircle2, CloudOff, Check,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
