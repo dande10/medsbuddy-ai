@@ -241,6 +241,28 @@ function TalkThreadPage() {
 
         {/* Chat */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 pr-1 -mx-1 px-1">
+          {offline && (
+            <div className="rounded-2xl border border-primary/25 bg-primary/[0.05] p-3.5">
+              <div className="flex items-center gap-2 font-semibold text-primary text-[14px]">
+                <CloudOff className="size-4" /> Limited Offline Mode
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12.5px] mt-2">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-0.5">Available</div>
+                  <div>· Health notes</div>
+                  <div>· Symptoms</div>
+                  <div>· Doctor Summary</div>
+                  <div>· Emergency QR</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-0.5">Unavailable</div>
+                  <div className="text-muted-foreground">· AI Patient Advocate</div>
+                  <div className="text-muted-foreground">· Medical search</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {messages.length === 0 && (
             <div className="py-6">
               <div className="text-center text-sm text-muted-foreground mb-4 inline-flex items-center gap-1.5 mx-auto w-full justify-center">
