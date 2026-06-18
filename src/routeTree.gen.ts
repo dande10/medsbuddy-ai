@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TalkRouteImport } from './routes/talk'
 import { Route as RemindersRouteImport } from './routes/reminders'
 import { Route as MemoryRouteImport } from './routes/memory'
+import { Route as EmergencyRouteImport } from './routes/emergency'
 import { Route as DoctorRouteImport } from './routes/doctor'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiTtsRouteImport } from './routes/api/tts'
@@ -29,6 +30,11 @@ const RemindersRoute = RemindersRouteImport.update({
 const MemoryRoute = MemoryRouteImport.update({
   id: '/memory',
   path: '/memory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmergencyRoute = EmergencyRouteImport.update({
+  id: '/emergency',
+  path: '/emergency',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DoctorRoute = DoctorRouteImport.update({
@@ -50,6 +56,7 @@ const ApiTtsRoute = ApiTtsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/doctor': typeof DoctorRoute
+  '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
   '/reminders': typeof RemindersRoute
   '/talk': typeof TalkRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/doctor': typeof DoctorRoute
+  '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
   '/reminders': typeof RemindersRoute
   '/talk': typeof TalkRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/doctor': typeof DoctorRoute
+  '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
   '/reminders': typeof RemindersRoute
   '/talk': typeof TalkRoute
@@ -74,13 +83,28 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/doctor' | '/memory' | '/reminders' | '/talk' | '/api/tts'
+  fullPaths:
+    | '/'
+    | '/doctor'
+    | '/emergency'
+    | '/memory'
+    | '/reminders'
+    | '/talk'
+    | '/api/tts'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/doctor' | '/memory' | '/reminders' | '/talk' | '/api/tts'
+  to:
+    | '/'
+    | '/doctor'
+    | '/emergency'
+    | '/memory'
+    | '/reminders'
+    | '/talk'
+    | '/api/tts'
   id:
     | '__root__'
     | '/'
     | '/doctor'
+    | '/emergency'
     | '/memory'
     | '/reminders'
     | '/talk'
@@ -90,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DoctorRoute: typeof DoctorRoute
+  EmergencyRoute: typeof EmergencyRoute
   MemoryRoute: typeof MemoryRoute
   RemindersRoute: typeof RemindersRoute
   TalkRoute: typeof TalkRoute
@@ -119,6 +144,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MemoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/emergency': {
+      id: '/emergency'
+      path: '/emergency'
+      fullPath: '/emergency'
+      preLoaderRoute: typeof EmergencyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/doctor': {
       id: '/doctor'
       path: '/doctor'
@@ -146,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DoctorRoute: DoctorRoute,
+  EmergencyRoute: EmergencyRoute,
   MemoryRoute: MemoryRoute,
   RemindersRoute: RemindersRoute,
   TalkRoute: TalkRoute,
