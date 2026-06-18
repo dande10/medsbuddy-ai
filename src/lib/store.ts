@@ -43,6 +43,13 @@ export interface ChatMessage {
   at: number;
 }
 
+export interface ChatThread {
+  id: string;
+  title: string;
+  updatedAt: number;
+  messages: ChatMessage[];
+}
+
 export interface Appointment {
   id: string;
   doctor: string;
@@ -63,7 +70,8 @@ interface State {
   doses: DoseEvent[];
   symptoms: Symptom[];
   appointments: Appointment[];
-  chat: ChatMessage[];
+  threads: ChatThread[];
+  activeThreadId: string | null;
   summaries: DoctorSummary[];
   setProfile: (p: Partial<Profile>) => void;
   addMed: (m: Omit<Medication, "id" | "createdAt">) => void;
@@ -71,8 +79,12 @@ interface State {
   logDose: (medId: string, status: DoseEvent["status"]) => void;
   addSymptom: (s: Omit<Symptom, "id" | "at">) => void;
   addAppointment: (a: Omit<Appointment, "id">) => void;
-  appendChat: (m: Omit<ChatMessage, "id" | "at">) => ChatMessage;
-  clearChat: () => void;
+  createThread: (title?: string) => string;
+  setActiveThread: (id: string) => void;
+  appendToThread: (threadId: string, m: Omit<ChatMessage, "id" | "at">) => ChatMessage;
+  clearThread: (threadId: string) => void;
+  deleteThread: (threadId: string) => void;
+  renameThread: (threadId: string, title: string) => void;
   addSummary: (text: string) => DoctorSummary;
 }
 
@@ -96,7 +108,8 @@ export const useApp = create<State>()(
       doses: [],
       symptoms: [],
       appointments: [],
-      chat: [],
+      threads: [],
+      activeThreadId: null,
       summaries: [],
       setProfile: (p) => set({ profile: { ...get().profile, ...p } }),
       addMed: (m) =>
@@ -120,12 +133,41 @@ export const useApp = create<State>()(
         set({ symptoms: [{ ...s, id: id(), at: Date.now() }, ...get().symptoms] }),
       addAppointment: (a) =>
         set({ appointments: [...get().appointments, { ...a, id: id() }] }),
-      appendChat: (m) => {
+      createThread: (title) => {
+        const tid = id();
+        const t: ChatThread = { id: tid, title: title ?? "New chat", updatedAt: Date.now(), messages: [] };
+        set({ threads: [t, ...get().threads], activeThreadId: tid });
+        return tid;
+      },
+      setActiveThread: (tid) => set({ activeThreadId: tid }),
+      appendToThread: (tid, m) => {
         const msg: ChatMessage = { ...m, id: id(), at: Date.now() };
-        set({ chat: [...get().chat, msg] });
+        const threads = get().threads.map((t) => {
+          if (t.id !== tid) return t;
+          const messages = [...t.messages, msg];
+          // Auto-title from the first user message
+          const title =
+            t.title === "New chat" && msg.role === "user"
+              ? msg.content.slice(0, 40) + (msg.content.length > 40 ? "…" : "")
+              : t.title;
+          return { ...t, messages, updatedAt: Date.now(), title };
+        });
+        set({ threads });
         return msg;
       },
-      clearChat: () => set({ chat: [] }),
+      clearThread: (tid) =>
+        set({
+          threads: get().threads.map((t) =>
+            t.id === tid ? { ...t, messages: [], title: "New chat", updatedAt: Date.now() } : t,
+          ),
+        }),
+      deleteThread: (tid) => {
+        const threads = get().threads.filter((t) => t.id !== tid);
+        const active = get().activeThreadId === tid ? threads[0]?.id ?? null : get().activeThreadId;
+        set({ threads, activeThreadId: active });
+      },
+      renameThread: (tid, title) =>
+        set({ threads: get().threads.map((t) => (t.id === tid ? { ...t, title } : t)) }),
       addSummary: (text) => {
         const s: DoctorSummary = { id: id(), text, at: Date.now() };
         set({ summaries: [s, ...get().summaries] });
