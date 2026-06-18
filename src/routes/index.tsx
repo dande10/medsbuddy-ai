@@ -88,6 +88,33 @@ function Home() {
         <QuickAction to="/memory" icon={Plus} label="Symptom" />
       </div>
 
+      {/* OFFLINE READY CARD */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="rounded-3xl border border-primary/25 bg-primary/[0.04] p-4 mb-5"
+      >
+        <div className="flex items-center gap-3 mb-3">
+          <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
+            <CloudOff className="size-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-[15px] tracking-tight">Offline Ready</div>
+            <div className="text-[12px] text-muted-foreground">Works without internet — even in emergencies.</div>
+          </div>
+          <span className="rounded-full bg-success/15 text-success text-[11px] font-semibold px-2.5 py-1">Available</span>
+        </div>
+        <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px]">
+          {["Doctor Summary", "Emergency QR", "Medications", "Symptoms", "Health Memory"].map((f) => (
+            <li key={f} className="inline-flex items-center gap-1.5 text-foreground/80">
+              <Check className="size-3.5 text-primary shrink-0" />
+              {f}
+            </li>
+          ))}
+        </ul>
+      </motion.div>
+
       {/* SNAPSHOT */}
       <div className="flex items-baseline justify-between mb-3">
         <h2>Today's snapshot</h2>
