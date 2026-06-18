@@ -18,7 +18,7 @@ export const Route = createFileRoute("/memory")({
 type Item = { id: string; at: number; kind: "symptom" | "dose" | "appt" | "chat"; title: string; sub?: string };
 
 function Memory() {
-  const { symptoms, doses, appointments, chat, addSymptom } = useApp();
+  const { symptoms, doses, appointments, chat, summaries, addSymptom } = useApp();
   const [adding, setAdding] = useState(false);
 
   const items: Item[] = [
@@ -26,6 +26,7 @@ function Memory() {
     ...doses.map<Item>((d) => ({ id: "d" + d.id, at: d.at, kind: "dose", title: d.medName, sub: `Marked ${d.status}` })),
     ...appointments.map<Item>((a) => ({ id: "a" + a.id, at: a.at, kind: "appt", title: `Appointment: ${a.doctor}`, sub: a.notes })),
     ...chat.filter((c) => c.role === "assistant").slice(-10).map<Item>((c) => ({ id: "c" + c.id, at: c.at, kind: "chat", title: "MedsBuddy note", sub: c.content.slice(0, 120) })),
+    ...summaries.map<Item>((s) => ({ id: "sum" + s.id, at: s.at, kind: "appt", title: "Doctor summary (approved)", sub: s.text.slice(0, 160) })),
   ].sort((a, b) => b.at - a.at);
 
   return (
