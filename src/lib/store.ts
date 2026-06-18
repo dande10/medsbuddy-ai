@@ -120,11 +120,16 @@ export const useApp = create<State>()(
     }),
     {
       name: "medsbuddy-v1",
-      storage: createJSONStorage(() =>
-        typeof window === "undefined"
-          ? ({ getItem: () => null, setItem: () => {}, removeItem: () => {} } as Storage)
-          : localStorage,
-      ),
+      storage: createJSONStorage(() => {
+        if (typeof window === "undefined") {
+          return {
+            getItem: () => null,
+            setItem: () => {},
+            removeItem: () => {},
+          };
+        }
+        return localStorage;
+      }),
     },
   ),
 );
