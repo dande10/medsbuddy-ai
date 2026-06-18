@@ -303,3 +303,54 @@ function AddSymptomDialog({ onClose, onAdd }: { onClose: () => void; onAdd: (s: 
     </div>
   );
 }
+
+function TextDialog({
+  title,
+  placeholder,
+  onClose,
+  onSave,
+}: {
+  title: string;
+  placeholder: string;
+  onClose: () => void;
+  onSave: (text: string) => void;
+}) {
+  const [text, setText] = useState("");
+  return (
+    <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm grid place-items-end sm:place-items-center p-4" onClick={onClose}>
+      <motion.div
+        initial={{ y: 40, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md bg-card rounded-3xl p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between mb-3">
+          <h2>{title}</h2>
+          <button onClick={onClose} className="size-8 rounded-full bg-secondary grid place-items-center" aria-label="Close">
+            <X className="size-4" />
+          </button>
+        </div>
+        <textarea
+          autoFocus
+          rows={4}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={placeholder}
+          className="w-full rounded-xl border px-3 py-2.5 text-[15px]"
+        />
+        <div className="flex gap-2 mt-4">
+          <button className="flex-1 rounded-xl bg-secondary text-secondary-foreground py-2.5 font-medium" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="flex-1 rounded-xl bg-primary text-primary-foreground py-2.5 font-semibold disabled:opacity-50"
+            disabled={!text.trim()}
+            onClick={() => onSave(text.trim())}
+          >
+            Save
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
