@@ -19,6 +19,7 @@ import { Route as CaregiverRouteImport } from './routes/caregiver'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TalkIndexRouteImport } from './routes/talk.index'
 import { Route as TalkThreadIdRouteImport } from './routes/talk.$threadId'
+import { Route as DoctorRecordRouteImport } from './routes/doctor.record'
 import { Route as ApiTtsRouteImport } from './routes/api/tts'
 
 const TalkRoute = TalkRouteImport.update({
@@ -71,6 +72,11 @@ const TalkThreadIdRoute = TalkThreadIdRouteImport.update({
   path: '/$threadId',
   getParentRoute: () => TalkRoute,
 } as any)
+const DoctorRecordRoute = DoctorRecordRouteImport.update({
+  id: '/record',
+  path: '/record',
+  getParentRoute: () => DoctorRoute,
+} as any)
 const ApiTtsRoute = ApiTtsRouteImport.update({
   id: '/api/tts',
   path: '/api/tts',
@@ -80,25 +86,27 @@ const ApiTtsRoute = ApiTtsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/caregiver': typeof CaregiverRoute
-  '/doctor': typeof DoctorRoute
+  '/doctor': typeof DoctorRouteWithChildren
   '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
   '/talk': typeof TalkRouteWithChildren
   '/api/tts': typeof ApiTtsRoute
+  '/doctor/record': typeof DoctorRecordRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/talk/': typeof TalkIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/caregiver': typeof CaregiverRoute
-  '/doctor': typeof DoctorRoute
+  '/doctor': typeof DoctorRouteWithChildren
   '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
   '/api/tts': typeof ApiTtsRoute
+  '/doctor/record': typeof DoctorRecordRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/talk': typeof TalkIndexRoute
 }
@@ -106,13 +114,14 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/caregiver': typeof CaregiverRoute
-  '/doctor': typeof DoctorRoute
+  '/doctor': typeof DoctorRouteWithChildren
   '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
   '/talk': typeof TalkRouteWithChildren
   '/api/tts': typeof ApiTtsRoute
+  '/doctor/record': typeof DoctorRecordRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/talk/': typeof TalkIndexRoute
 }
@@ -128,6 +137,7 @@ export interface FileRouteTypes {
     | '/reminders'
     | '/talk'
     | '/api/tts'
+    | '/doctor/record'
     | '/talk/$threadId'
     | '/talk/'
   fileRoutesByTo: FileRoutesByTo
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reminders'
     | '/api/tts'
+    | '/doctor/record'
     | '/talk/$threadId'
     | '/talk'
   id:
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/reminders'
     | '/talk'
     | '/api/tts'
+    | '/doctor/record'
     | '/talk/$threadId'
     | '/talk/'
   fileRoutesById: FileRoutesById
@@ -160,7 +172,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CaregiverRoute: typeof CaregiverRoute
-  DoctorRoute: typeof DoctorRoute
+  DoctorRoute: typeof DoctorRouteWithChildren
   EmergencyRoute: typeof EmergencyRoute
   MemoryRoute: typeof MemoryRoute
   ProfileRoute: typeof ProfileRoute
@@ -241,6 +253,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TalkThreadIdRouteImport
       parentRoute: typeof TalkRoute
     }
+    '/doctor/record': {
+      id: '/doctor/record'
+      path: '/record'
+      fullPath: '/doctor/record'
+      preLoaderRoute: typeof DoctorRecordRouteImport
+      parentRoute: typeof DoctorRoute
+    }
     '/api/tts': {
       id: '/api/tts'
       path: '/api/tts'
@@ -250,6 +269,17 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface DoctorRouteChildren {
+  DoctorRecordRoute: typeof DoctorRecordRoute
+}
+
+const DoctorRouteChildren: DoctorRouteChildren = {
+  DoctorRecordRoute: DoctorRecordRoute,
+}
+
+const DoctorRouteWithChildren =
+  DoctorRoute._addFileChildren(DoctorRouteChildren)
 
 interface TalkRouteChildren {
   TalkThreadIdRoute: typeof TalkThreadIdRoute
@@ -266,7 +296,7 @@ const TalkRouteWithChildren = TalkRoute._addFileChildren(TalkRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CaregiverRoute: CaregiverRoute,
-  DoctorRoute: DoctorRoute,
+  DoctorRoute: DoctorRouteWithChildren,
   EmergencyRoute: EmergencyRoute,
   MemoryRoute: MemoryRoute,
   ProfileRoute: ProfileRoute,
