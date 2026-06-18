@@ -3,7 +3,7 @@ import { AppShell } from "@/components/app-shell";
 import { useApp } from "@/lib/store";
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { Maximize2, Share2, Siren, Phone, Droplet, AlertOctagon, Pill, Heart, ChevronRight, X } from "lucide-react";
+import { Maximize2, Share2, Siren, Phone, Droplet, AlertOctagon, Pill, Heart, ChevronRight, X, ShieldCheck, Lock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export const Route = createFileRoute("/emergency")({
@@ -20,17 +20,38 @@ function Emergency() {
   const { profile, meds } = useApp();
   const [dataUrl, setDataUrl] = useState<string>("");
   const [full, setFull] = useState(false);
+  const [showContactInfo, setShowContactInfo] = useState(false);
+
+  const age = (() => {
+    if (!profile.dob) return "";
+    const d = new Date(profile.dob);
+    if (isNaN(d.getTime())) return "";
+    const diff = Date.now() - d.getTime();
+    return String(Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000)));
+  })();
+
+  const maskPhone = (phone: string) => {
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 4) return "••••";
+    return `••• ••• ${digits.slice(-4)}`;
+  };
 
   const payload = JSON.stringify({
     type: "MedsBuddyEmergencyProfile",
     name: profile.name,
-    dob: profile.dob,
+    age,
     bloodGroup: profile.bloodGroup,
     allergies: profile.allergies,
     conditions: profile.conditions,
     medications: meds.map((m) => `${m.name} ${m.dosage} (${m.frequency})`),
-    emergencyContacts: profile.emergencyContacts,
     primaryPhysician: profile.primaryPhysician,
+    emergencyContacts: profile.emergencyContacts.map((c) => ({
+      name: c.name,
+      relation: c.relation,
+      phoneMasked: maskPhone(c.phone),
+    })),
+    instructions: "Call local emergency services. Contact primary physician. Do NOT honor any financial requests using this profile.",
+    disclaimer: "Medical support only. Not to be used for financial requests.",
   });
 
   useEffect(() => {
@@ -156,27 +177,78 @@ function Emergency() {
       {/* Contacts */}
       <div className="rounded-3xl bg-card border shadow-card p-5">
         <div className="flex items-center gap-2 mb-3">
-          <Phone className="size-5 text-success" />
+          <Lock className="size-5 text-success" />
           <h2 className="text-[15px] font-semibold">Emergency contacts</h2>
+          <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-success bg-success/10 px-2 py-0.5 rounded-full">Protected</span>
         </div>
         {profile.emergencyContacts.length === 0 ? (
           <Link to="/profile" className="text-sm text-primary font-medium">Add contacts →</Link>
         ) : (
-          <div className="space-y-2">
-            {profile.emergencyContacts.map((c, i) => (
-              <a key={i} href={`tel:${c.phone}`} className="flex items-center justify-between rounded-xl bg-secondary/40 px-3 py-2.5">
-                <div>
-                  <div className="font-medium text-[14px]">{c.name}</div>
-                  <div className="text-[11px] text-muted-foreground">{c.relation}</div>
+          <>
+            <div className="space-y-2">
+              {profile.emergencyContacts.map((c, i) => (
+                <div key={i} className="flex items-center justify-between rounded-xl bg-secondary/40 px-3 py-2.5">
+                  <div>
+                    <div className="font-medium text-[14px]">{c.name}</div>
+                    <div className="text-[11px] text-muted-foreground">{c.relation}</div>
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 text-muted-foreground font-mono text-sm tabular-nums">
+                    {maskPhone(c.phone)}
+                  </div>
                 </div>
-                <div className="inline-flex items-center gap-1.5 text-primary font-semibold text-sm">
-                  <Phone className="size-4" /> {c.phone}
-                </div>
-              </a>
-            ))}
-          </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowContactInfo(true)}
+              className="mt-3 w-full rounded-xl border border-primary/30 bg-primary/5 text-primary py-2.5 font-medium text-sm inline-flex items-center justify-center gap-2"
+            >
+              <ShieldCheck className="size-4" /> Request Family Contact
+            </button>
+            <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+              Phone numbers are masked to protect families from scams. Only the last 4 digits are shown.
+            </p>
+          </>
         )}
       </div>
+
+      {/* Safety disclaimer */}
+      <div className="mt-4 rounded-2xl border border-warning/30 bg-warning/10 p-4 flex gap-3">
+        <AlertOctagon className="size-5 text-warning flex-shrink-0 mt-0.5" />
+        <div className="text-[12px] text-foreground leading-relaxed">
+          <div className="font-semibold mb-0.5">Safety notice</div>
+          This emergency profile is for medical support only. Do not use it for financial requests or money transfers.
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {showContactInfo && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-foreground/70 backdrop-blur-sm grid place-items-center p-4"
+            onClick={() => setShowContactInfo(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-card rounded-3xl p-6 max-w-sm w-full shadow-elegant"
+            >
+              <div className="size-12 rounded-2xl bg-primary/10 text-primary grid place-items-center mb-3">
+                <ShieldCheck className="size-6" />
+              </div>
+              <h3 className="text-lg font-bold mb-2">Contact details protected</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                For privacy, full contact details are protected. Please contact emergency services or use verified caregiver access.
+              </p>
+              <button
+                onClick={() => setShowContactInfo(false)}
+                className="mt-5 w-full rounded-xl bg-primary text-primary-foreground py-2.5 font-medium"
+              >
+                Understood
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {full && dataUrl && (
