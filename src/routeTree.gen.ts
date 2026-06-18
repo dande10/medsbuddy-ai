@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TalkRouteImport } from './routes/talk'
 import { Route as RemindersRouteImport } from './routes/reminders'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as MemoryRouteImport } from './routes/memory'
@@ -18,6 +19,11 @@ import { Route as CaregiverRouteImport } from './routes/caregiver'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiTtsRouteImport } from './routes/api/tts'
 
+const TalkRoute = TalkRouteImport.update({
+  id: '/talk',
+  path: '/talk',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RemindersRoute = RemindersRouteImport.update({
   id: '/reminders',
   path: '/reminders',
@@ -67,6 +73,7 @@ export interface FileRoutesByFullPath {
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
+  '/talk': typeof TalkRoute
   '/api/tts': typeof ApiTtsRoute
 }
 export interface FileRoutesByTo {
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
+  '/talk': typeof TalkRoute
   '/api/tts': typeof ApiTtsRoute
 }
 export interface FileRoutesById {
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
+  '/talk': typeof TalkRoute
   '/api/tts': typeof ApiTtsRoute
 }
 export interface FileRouteTypes {
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/memory'
     | '/profile'
     | '/reminders'
+    | '/talk'
     | '/api/tts'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
     | '/memory'
     | '/profile'
     | '/reminders'
+    | '/talk'
     | '/api/tts'
   id:
     | '__root__'
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
     | '/memory'
     | '/profile'
     | '/reminders'
+    | '/talk'
     | '/api/tts'
   fileRoutesById: FileRoutesById
 }
@@ -131,11 +143,19 @@ export interface RootRouteChildren {
   MemoryRoute: typeof MemoryRoute
   ProfileRoute: typeof ProfileRoute
   RemindersRoute: typeof RemindersRoute
+  TalkRoute: typeof TalkRoute
   ApiTtsRoute: typeof ApiTtsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/talk': {
+      id: '/talk'
+      path: '/talk'
+      fullPath: '/talk'
+      preLoaderRoute: typeof TalkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reminders': {
       id: '/reminders'
       path: '/reminders'
@@ -203,6 +223,7 @@ const rootRouteChildren: RootRouteChildren = {
   MemoryRoute: MemoryRoute,
   ProfileRoute: ProfileRoute,
   RemindersRoute: RemindersRoute,
+  TalkRoute: TalkRoute,
   ApiTtsRoute: ApiTtsRoute,
 }
 export const routeTree = rootRouteImport
