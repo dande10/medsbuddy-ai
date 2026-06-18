@@ -1,13 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Outlet } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { useApp, adherence, type VisitRecord } from "@/lib/store";
 import { speak, stopSpeaking } from "@/lib/voice";
-import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus, ShieldCheck, FileText, Pencil, Check, AlertTriangle, Mic, MicOff, ShieldAlert, History, Trash2, StickyNote, Sparkles, PlayCircle, X, Send, ChevronRight, ListChecks, AlertCircle, ClipboardList, Heart, FlaskConical } from "lucide-react";
+import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus, ShieldCheck, FileText, Pencil, Check, AlertTriangle, Mic, History, Trash2, ChevronRight, ListChecks, AlertCircle, ClipboardList, Heart, FlaskConical, Sparkles, PlayCircle, X, Send, StickyNote, ShieldAlert } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { aiChat } from "@/lib/ai-chat.functions";
 import { useConnectivity } from "@/lib/connectivity";
+import { useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/doctor")({
   head: () => ({
@@ -16,8 +18,16 @@ export const Route = createFileRoute("/doctor")({
       { name: "description", content: "Premium clinical briefing for your next doctor visit." },
     ],
   }),
-  component: Doctor,
+  component: DoctorLayout,
 });
+
+function DoctorLayout() {
+  return (
+    <AppShell>
+      <Outlet />
+    </AppShell>
+  );
+}
 
 function buildSummary(state: ReturnType<typeof useApp.getState>): string {
   const { profile, meds, doses, symptoms, appointments } = state;
@@ -46,15 +56,15 @@ function buildSummary(state: ReturnType<typeof useApp.getState>): string {
   return lines.join(" ");
 }
 
-function Doctor() {
+export function DoctorPage() {
   const state = useApp();
-  const { profile, meds, doses, symptoms, appointments, addSummary, addNote, visits } = state;
+  const navigate = useNavigate({ from: "/doctor" });
+  const { profile, meds, doses, symptoms, appointments, addSummary, addNote, visits, setCurrentVisitSummary } = state;
   const generated = useMemo(() => buildSummary(state), [state]);
   const [speaking, setSpeaking] = useState(false);
   const [draft, setDraft] = useState(generated);
   const [approved, setApproved] = useState(false);
 
-  // If the underlying data changes and the user hasn't approved yet, refresh draft.
   useEffect(() => {
     if (!approved) setDraft(generated);
   }, [generated, approved]);
@@ -81,6 +91,7 @@ function Doctor() {
     const text = draft.trim();
     if (!text) return;
     addSummary(text);
+    setCurrentVisitSummary(text);
     setApproved(true);
   };
   const handleEditAgain = () => {
@@ -92,7 +103,7 @@ function Doctor() {
   const empty = !profile.name && meds.length === 0 && symptoms.length === 0;
 
   return (
-    <AppShell>
+    <>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="rounded-[28px] gradient-hero text-primary-foreground p-6 shadow-elegant mb-5 relative overflow-hidden">
         <div className="absolute -top-16 -right-16 size-48 rounded-full bg-white/10 blur-3xl" />
         <div className="flex items-center gap-3">
@@ -210,17 +221,9 @@ function Doctor() {
           </Section>
 
           {approved && (
-            <VisitWorkflow
-              meds={meds}
-              patientSummary={draft}
-              onSaveVisit={(v) => {
-                state.addVisit(v);
-                toast.success("Visit saved to Health Memory");
-              }}
-              onQuickNote={(t) => {
-                addNote(t);
-                toast.success("Note saved to Health Memory");
-              }}
+            <PostApprovePrompt
+              onStartVisit={() => navigate({ to: "/doctor/record" })}
+              onQuickNote={(t) => { addNote(t); toast.success("Note saved to Health Memory"); }}
             />
           )}
 
@@ -254,398 +257,68 @@ function Doctor() {
           Generated from your device data. No internet required.
         </p>
       </div>
-    </AppShell>
+    </>
   );
 }
 
-/* ---------------- Visit recording workflow ---------------- */
+/* ---------------- Post-approve prompt ---------------- */
 
-type Stage = "ask" | "patient-declined" | "doctor-consent" | "recording" | "summary" | "doctor-declined" | "done";
-
-function VisitWorkflow({
-  meds,
-  patientSummary,
-  onSaveVisit,
+function PostApprovePrompt({
+  onStartVisit,
   onQuickNote,
 }: {
-  meds: { name: string; dosage: string }[];
-  patientSummary: string;
-  onSaveVisit: (v: Omit<VisitRecord, "id" | "at"> & { at?: number }) => void;
+  onStartVisit: () => void;
   onQuickNote: (text: string) => void;
 }) {
-  const [stage, setStage] = useState<Stage>("ask");
-  const [doctorName, setDoctorName] = useState("");
-  const [specialty, setSpecialty] = useState("");
-  const [recording, setRecording] = useState(false);
-  const [seconds, setSeconds] = useState(0);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [audioDataUrl, setAudioDataUrl] = useState<string | undefined>(undefined);
-  const [recError, setRecError] = useState<string | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<BlobPart[]>([]);
-  const tickRef = useRef<number | null>(null);
-  const startedAtRef = useRef<number>(0);
-  const streamRef = useRef<MediaStream | null>(null);
+  const [declined, setDeclined] = useState(false);
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (tickRef.current) window.clearInterval(tickRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const startRecording = async () => {
-    setRecError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const mime =
-        MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" :
-        MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "";
-      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-      chunksRef.current = [];
-      rec.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data); };
-      rec.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
-        const url = URL.createObjectURL(blob);
-        setAudioUrl(url);
-        // Only persist audio if reasonably small (<3MB) to avoid blowing localStorage
-        if (blob.size <= 3 * 1024 * 1024) {
-          const dataUrl = await blobToDataUrl(blob);
-          setAudioDataUrl(dataUrl);
-        } else {
-          setAudioDataUrl(undefined);
-        }
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-        setRecording(false);
-        setStage("summary");
-      };
-      rec.start();
-      recorderRef.current = rec;
-      startedAtRef.current = Date.now();
-      setSeconds(0);
-      setRecording(true);
-      setStage("recording");
-      tickRef.current = window.setInterval(() => {
-        setSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
-      }, 500);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Microphone unavailable";
-      setRecError(msg);
-      toast.error("Couldn't start recording", { description: msg });
-    }
-  };
-
-  const stopRecording = () => {
-    if (tickRef.current) { window.clearInterval(tickRef.current); tickRef.current = null; }
-    recorderRef.current?.stop();
-  };
-
-  const handleSaveVisit = (payload: {
-    topicsDiscussed: string;
-    medicationChanges: string;
-    newRecommendations: string;
-    testsOrdered: string;
-    followUpAppointments: string;
-    actionItems: string;
-    notes: string;
-  }) => {
-    // Build a short Visit Outcome summary that is distinct from the patient's pre-visit summary.
-    const outcomeBits = [
-      payload.topicsDiscussed && `Discussed: ${payload.topicsDiscussed}`,
-      payload.medicationChanges && `Medication changes: ${payload.medicationChanges}`,
-      payload.newRecommendations && `Recommendations: ${payload.newRecommendations}`,
-      payload.testsOrdered && `Tests ordered: ${payload.testsOrdered}`,
-      payload.followUpAppointments && `Follow-up: ${payload.followUpAppointments}`,
-      payload.actionItems && `Action items: ${payload.actionItems}`,
-    ].filter(Boolean) as string[];
-    const outcomeSummary =
-      outcomeBits.length > 0
-        ? outcomeBits.join(". ")
-        : `Visit outcome with ${doctorName || "doctor"}${specialty ? ` (${specialty})` : ""} on ${new Date().toLocaleDateString()}.`;
-    onSaveVisit({
-      doctor: doctorName.trim() || "Unspecified doctor",
-      specialty: specialty.trim() || undefined,
-      durationSec: seconds || undefined,
-      audioDataUrl,
-      summary: outcomeSummary,
-      patientSummary: patientSummary?.trim() || undefined,
-      topicsDiscussed: payload.topicsDiscussed.trim() || undefined,
-      medicationChanges: payload.medicationChanges.trim() || undefined,
-      newRecommendations: payload.newRecommendations.trim() || undefined,
-      testsOrdered: payload.testsOrdered.trim() || undefined,
-      followUpAppointments: payload.followUpAppointments.trim() || undefined,
-      actionItems: payload.actionItems.trim() || undefined,
-      notes: payload.notes.trim() || undefined,
-      recorded: !!audioDataUrl || seconds > 0,
-    });
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    setAudioUrl(null);
-    setAudioDataUrl(undefined);
-    setSeconds(0);
-    setDoctorName("");
-    setSpecialty("");
-    setStage("done");
-  };
+  if (declined) {
+    return (
+      <Section icon={Mic} title="Today's visit" tint="primary">
+        <div className="text-sm text-muted-foreground">
+          No problem — you can come back anytime.{" "}
+          <button className="text-primary font-medium" onClick={() => setDeclined(false)}>Change my mind</button>
+        </div>
+      </Section>
+    );
+  }
 
   return (
     <Section icon={Mic} title="Today's visit" tint="primary">
-      {stage === "ask" && (
-        <div>
-          <p className="text-sm">Would you like me to help keep track of today's visit?</p>
-          <div className="flex gap-2 mt-3">
-            <button
-              onClick={() => setStage("doctor-consent")}
-              className="flex-1 rounded-xl bg-primary text-primary-foreground py-2.5 font-semibold"
-            >
-              Yes
-            </button>
-            <button
-              onClick={() => setStage("patient-declined")}
-              className="flex-1 rounded-xl bg-secondary text-secondary-foreground py-2.5 font-medium"
-            >
-              Not now
-            </button>
-          </div>
-        </div>
-      )}
-
-      {stage === "patient-declined" && (
-        <div className="text-sm text-muted-foreground">
-          No problem — you can come back anytime.{" "}
-          <button className="text-primary font-medium" onClick={() => setStage("ask")}>Change my mind</button>
-        </div>
-      )}
-
-      {stage === "doctor-consent" && (
-        <div>
-          <div className="rounded-xl bg-warning/10 border border-warning/30 p-3 mb-3 flex items-start gap-2">
-            <ShieldAlert className="size-4 text-warning shrink-0 mt-0.5" />
-            <div className="text-[13px] text-warning-foreground/90">
-              <div className="font-semibold text-warning">Before recording</div>
-              Please make sure your doctor agrees to being recorded.
-            </div>
-          </div>
-          <p className="text-sm italic text-foreground/90">
-            "Doctor, would it be okay if I record this visit to help me remember important information and create a summary afterward?"
-          </p>
-          <div className="grid grid-cols-2 gap-2 mt-3">
-            <input
-              value={doctorName}
-              onChange={(e) => setDoctorName(e.target.value)}
-              placeholder="Doctor name (optional)"
-              className="rounded-xl border bg-background px-3 py-2 text-sm"
-            />
-            <input
-              value={specialty}
-              onChange={(e) => setSpecialty(e.target.value)}
-              placeholder="Specialty (optional)"
-              className="rounded-xl border bg-background px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="flex gap-2 mt-3">
-            <button
-              onClick={startRecording}
-              className="flex-1 rounded-xl bg-primary text-primary-foreground py-2.5 font-semibold inline-flex items-center justify-center gap-2"
-            >
-              <Check className="size-4" /> Doctor approved
-            </button>
-            <button
-              onClick={() => setStage("doctor-declined")}
-              className="flex-1 rounded-xl bg-secondary text-secondary-foreground py-2.5 font-medium inline-flex items-center justify-center gap-2"
-            >
-              <MicOff className="size-4" /> Doctor declined
-            </button>
-          </div>
-          {recError && <div className="text-[12px] text-destructive mt-2">{recError}</div>}
-        </div>
-      )}
-
-      {stage === "recording" && (
-        <div>
-          <div className="rounded-xl bg-destructive/10 border border-destructive/30 p-4 flex items-center gap-3">
-            <span className="relative grid place-items-center size-10 rounded-full bg-destructive/15">
-              <span className="absolute inset-0 rounded-full bg-destructive/40 animate-ping" />
-              <Mic className="size-5 text-destructive relative" />
-            </span>
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-destructive">Recording visit</div>
-              <div className="text-[12px] text-muted-foreground">{formatDuration(seconds)} · {doctorName || "your doctor"}</div>
-            </div>
-            <button
-              onClick={stopRecording}
-              className="rounded-xl bg-destructive text-destructive-foreground px-3 py-2 text-sm font-semibold inline-flex items-center gap-1.5"
-            >
-              <Square className="size-4 fill-current" /> Stop
-            </button>
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-2 text-center">
-            You can stop the recording at any time. Audio stays on your device.
-          </p>
-        </div>
-      )}
-
-      {stage === "summary" && (
-        <VisitSummaryForm
-          duration={seconds}
-          audioUrl={audioUrl}
-          doctorName={doctorName || "your doctor"}
-          patientSummary={patientSummary}
-          onCancel={() => {
-            if (audioUrl) URL.revokeObjectURL(audioUrl);
-            setAudioUrl(null);
-            setAudioDataUrl(undefined);
-            setStage("ask");
-          }}
-          onSave={handleSaveVisit}
-        />
-      )}
-
-      {stage === "doctor-declined" && (
-        <div>
-          <p className="text-sm">That's okay. You can still take notes during the visit.</p>
+      <div>
+        <p className="text-sm font-medium">Would you like me to help keep track of today's visit?</p>
+        <p className="text-[12px] text-muted-foreground mt-1">
+          I can record audio (with consent), capture what the doctor said, and save a visit outcome summary to your Health Memory.
+        </p>
+        <div className="flex gap-2 mt-3">
           <button
-            onClick={() => setQuickNoteOpen(true)}
-            className="mt-3 w-full rounded-xl bg-primary text-primary-foreground py-2.5 font-semibold inline-flex items-center justify-center gap-2"
+            onClick={onStartVisit}
+            className="flex-1 rounded-xl bg-primary text-primary-foreground py-2.5 font-semibold inline-flex items-center justify-center gap-2"
           >
-            <StickyNote className="size-4" /> Quick note
+            <Check className="size-4" /> Yes
           </button>
           <button
-            onClick={() => setStage("ask")}
-            className="mt-2 w-full rounded-xl bg-secondary text-secondary-foreground py-2 text-sm font-medium"
+            onClick={() => setDeclined(true)}
+            className="flex-1 rounded-xl bg-secondary text-secondary-foreground py-2.5 font-medium"
           >
-            Back
-          </button>
-          {quickNoteOpen && (
-            <QuickNoteDialog
-              onClose={() => setQuickNoteOpen(false)}
-              onSave={(t) => { onQuickNote(t); setQuickNoteOpen(false); }}
-            />
-          )}
-        </div>
-      )}
-
-      {stage === "done" && (
-        <div className="text-sm">
-          <div className="inline-flex items-center gap-1.5 text-success font-medium">
-            <ShieldCheck className="size-4" /> Visit saved to Health Memory
-          </div>
-          <button
-            onClick={() => setStage("ask")}
-            className="block mt-3 text-primary text-sm font-medium"
-          >
-            Log another visit
+            Not now
           </button>
         </div>
-      )}
-    </Section>
-  );
-}
-
-function VisitSummaryForm({
-  duration, audioUrl, doctorName, patientSummary, onCancel, onSave,
-}: {
-  duration: number;
-  audioUrl: string | null;
-  doctorName: string;
-  patientSummary?: string;
-  onCancel: () => void;
-  onSave: (p: {
-    topicsDiscussed: string;
-    medicationChanges: string;
-    newRecommendations: string;
-    testsOrdered: string;
-    followUpAppointments: string;
-    actionItems: string;
-    notes: string;
-  }) => void;
-}) {
-  const [topicsDiscussed, setTopicsDiscussed] = useState("");
-  const [medicationChanges, setMedicationChanges] = useState("");
-  const [newRecommendations, setNewRecommendations] = useState("");
-  const [testsOrdered, setTestsOrdered] = useState("");
-  const [followUpAppointments, setFollowUpAppointments] = useState("");
-  const [actionItems, setActionItems] = useState("");
-  const [notes, setNotes] = useState("");
-  const [showPatientSummary, setShowPatientSummary] = useState(false);
-  const canSave =
-    topicsDiscussed.trim() ||
-    medicationChanges.trim() ||
-    newRecommendations.trim() ||
-    testsOrdered.trim() ||
-    followUpAppointments.trim() ||
-    actionItems.trim() ||
-    notes.trim();
-  return (
-    <div>
-      <div className="rounded-xl bg-success/10 border border-success/30 p-3 mb-3 text-[13px]">
-        <div className="font-semibold text-success">Recording finished</div>
-        <div className="text-muted-foreground">
-          {formatDuration(duration)} with {doctorName}. Capture the <strong>visit outcome</strong> below — what the doctor said, decided, or recommended.
-        </div>
-        {audioUrl && (
-          <audio controls src={audioUrl} className="w-full mt-2" />
-        )}
-      </div>
-      {patientSummary && (
-        <div className="rounded-xl border bg-secondary/40 p-3 mb-3 text-[12px]">
-          <button
-            type="button"
-            onClick={() => setShowPatientSummary((s) => !s)}
-            className="font-semibold text-foreground inline-flex items-center gap-1"
-          >
-            <ChevronRight className={`size-3 transition ${showPatientSummary ? "rotate-90" : ""}`} />
-            Patient summary you brought to the visit
-          </button>
-          {showPatientSummary && (
-            <div className="mt-2 text-muted-foreground whitespace-pre-wrap">{patientSummary}</div>
-          )}
-          <div className="mt-1 text-[11px] text-muted-foreground">For reference only — please capture what the doctor said below, not what you told them.</div>
-        </div>
-      )}
-      <div className="text-[12px] font-semibold uppercase tracking-wide text-primary mb-1">Visit outcome</div>
-      <Field label="Topics discussed"><textarea rows={2} value={topicsDiscussed} onChange={(e) => setTopicsDiscussed(e.target.value)} placeholder="e.g. Blood pressure trends, headaches, sleep" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Medication changes"><textarea rows={2} value={medicationChanges} onChange={(e) => setMedicationChanges(e.target.value)} placeholder="e.g. Increased lisinopril to 20mg; stopped ibuprofen" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="New recommendations"><textarea rows={2} value={newRecommendations} onChange={(e) => setNewRecommendations(e.target.value)} placeholder="e.g. Reduce salt, walk 20 min/day" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Tests ordered"><textarea rows={2} value={testsOrdered} onChange={(e) => setTestsOrdered(e.target.value)} placeholder="e.g. Blood panel, EKG" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Follow-up appointments"><textarea rows={2} value={followUpAppointments} onChange={(e) => setFollowUpAppointments(e.target.value)} placeholder="e.g. Cardiology in 3 months" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Action items for me"><textarea rows={2} value={actionItems} onChange={(e) => setActionItems(e.target.value)} placeholder="e.g. Pick up new prescription, book lab" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Other appointment notes"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <div className="flex gap-2 mt-3">
-        <button onClick={onCancel} className="flex-1 rounded-xl bg-secondary text-secondary-foreground py-2.5 font-medium">Discard</button>
         <button
-          onClick={() =>
-            onSave({
-              topicsDiscussed,
-              medicationChanges,
-              newRecommendations,
-              testsOrdered,
-              followUpAppointments,
-              actionItems,
-              notes,
-            })
-          }
-          disabled={!canSave}
-          className="flex-1 rounded-xl bg-primary text-primary-foreground py-2.5 font-semibold disabled:opacity-50"
+          onClick={() => setQuickNoteOpen(true)}
+          className="mt-2 w-full rounded-xl bg-secondary text-secondary-foreground py-2 text-sm font-medium inline-flex items-center justify-center gap-2"
         >
-          Save visit outcome
+          <StickyNote className="size-4" /> Quick note instead
         </button>
       </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block mt-2">
-      <span className="text-[12px] font-medium text-muted-foreground">{label}</span>
-      <div className="mt-1">{children}</div>
-    </label>
+      {quickNoteOpen && (
+        <QuickNoteDialog
+          onClose={() => setQuickNoteOpen(false)}
+          onSave={(t) => { onQuickNote(t); setQuickNoteOpen(false); }}
+        />
+      )}
+    </Section>
   );
 }
 
@@ -677,6 +350,8 @@ function QuickNoteDialog({ onClose, onSave }: { onClose: () => void; onSave: (t:
     </div>
   );
 }
+
+/* ---------------- Visit history ---------------- */
 
 function VisitHistory({ visits, onRemove }: { visits: VisitRecord[]; onRemove: (id: string) => void }) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -747,7 +422,6 @@ function VisitDetailDialog({
   const [askInput, setAskInput] = useState("");
   const [asking, setAsking] = useState(false);
 
-  // Local extraction (deterministic, offline-safe)
   const topics = useMemo(() => extractTopics(visit), [visit]);
   const transcriptText = useMemo(() => buildTranscript(visit), [visit]);
   const summaryNarration = useMemo(() => buildSummaryNarration(visit), [visit]);
@@ -833,7 +507,6 @@ function VisitDetailDialog({
         onClick={(e) => e.stopPropagation()}
         className="w-full sm:max-w-lg bg-card sm:rounded-3xl rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col"
       >
-        {/* Header / Overview */}
         <div className="p-5 border-b">
           <div className="flex items-start gap-3">
             <div className="size-11 rounded-2xl gradient-hero grid place-items-center text-primary-foreground shrink-0">
@@ -869,10 +542,8 @@ function VisitDetailDialog({
         </div>
 
         <div className="overflow-y-auto p-5 space-y-4">
-          {/* Visit timeline */}
           <VisitTimeline visit={visit} />
 
-          {/* Explanation */}
           {(explanation || loadingExplain || explainError) && (
             <Block icon={Sparkles} title="MedsBuddy explains">
               {loadingExplain && <div className="text-sm text-muted-foreground">Reading the visit notes and putting it in plain language…</div>}
@@ -881,21 +552,18 @@ function VisitDetailDialog({
             </Block>
           )}
 
-          {/* Player */}
           {showPlayer && visit.audioDataUrl && (
             <Block icon={PlayCircle} title="Recording">
               <audio controls src={visit.audioDataUrl} className="w-full" />
             </Block>
           )}
 
-          {/* Transcript / notes */}
           {showTranscript && (
             <Block icon={FileText} title="Visit notes">
               <pre className="text-[13px] whitespace-pre-wrap font-sans leading-relaxed">{transcriptText}</pre>
             </Block>
           )}
 
-          {/* Important topics */}
           {topics.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -919,7 +587,6 @@ function VisitDetailDialog({
             </div>
           )}
 
-          {/* Q&A */}
           <div>
             <div className="flex items-center gap-2 mb-2">
               <MessageSquareQuote className="size-4 text-primary" />
@@ -1028,7 +695,6 @@ function extractTopics(v: VisitRecord): { kind: TopicKind; label: string; detail
   push("lifestyle", v.newRecommendations ?? v.carePlan);
   push("test", v.testsOrdered);
   push("symptom", v.topicsDiscussed);
-  // Heuristic: pull "test" / "lab" mentions out of notes
   const haystack = [v.summary, v.notes, v.actionItems, v.questionsAnswered].filter(Boolean).join("\n");
   if (!v.testsOrdered && /\b(lab|test|x-?ray|scan|blood work|ekg|mri|ct)\b/i.test(haystack)) {
     push("test", findSentencesMatching(haystack, /lab|test|x-?ray|scan|blood work|ekg|mri|ct/i));
@@ -1149,15 +815,6 @@ function formatDuration(s: number): string {
   const m = Math.floor(s / 60);
   const r = s % 60;
   return `${m}:${String(r).padStart(2, "0")}`;
-}
-
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onloadend = () => res(String(r.result));
-    r.onerror = () => rej(r.error);
-    r.readAsDataURL(blob);
-  });
 }
 
 function ReviewBanner({ approved }: { approved: boolean }) {
