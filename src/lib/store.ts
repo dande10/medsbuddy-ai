@@ -51,6 +51,12 @@ export interface Appointment {
   notes?: string;
 }
 
+export interface DoctorSummary {
+  id: string;
+  text: string;
+  at: number;
+}
+
 interface State {
   profile: Profile;
   meds: Medication[];
@@ -58,6 +64,7 @@ interface State {
   symptoms: Symptom[];
   appointments: Appointment[];
   chat: ChatMessage[];
+  summaries: DoctorSummary[];
   setProfile: (p: Partial<Profile>) => void;
   addMed: (m: Omit<Medication, "id" | "createdAt">) => void;
   removeMed: (id: string) => void;
@@ -66,6 +73,7 @@ interface State {
   addAppointment: (a: Omit<Appointment, "id">) => void;
   appendChat: (m: Omit<ChatMessage, "id" | "at">) => ChatMessage;
   clearChat: () => void;
+  addSummary: (text: string) => DoctorSummary;
 }
 
 const id = () => Math.random().toString(36).slice(2, 10);
@@ -89,6 +97,7 @@ export const useApp = create<State>()(
       symptoms: [],
       appointments: [],
       chat: [],
+      summaries: [],
       setProfile: (p) => set({ profile: { ...get().profile, ...p } }),
       addMed: (m) =>
         set({ meds: [...get().meds, { ...m, id: id(), createdAt: Date.now() }] }),
@@ -117,6 +126,11 @@ export const useApp = create<State>()(
         return msg;
       },
       clearChat: () => set({ chat: [] }),
+      addSummary: (text) => {
+        const s: DoctorSummary = { id: id(), text, at: Date.now() };
+        set({ summaries: [s, ...get().summaries] });
+        return s;
+      },
     }),
     {
       name: "medsbuddy-v1",
