@@ -18,7 +18,8 @@ export const Route = createFileRoute("/memory")({
 type Item = { id: string; at: number; kind: "symptom" | "dose" | "appt" | "chat"; title: string; sub?: string };
 
 function Memory() {
-  const { symptoms, doses, appointments, chat, summaries, addSymptom } = useApp();
+  const { symptoms, doses, appointments, threads, summaries, addSymptom } = useApp();
+  const chat = threads.flatMap((t) => t.messages);
   const [adding, setAdding] = useState(false);
 
   const items: Item[] = [
