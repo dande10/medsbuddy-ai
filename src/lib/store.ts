@@ -176,7 +176,6 @@ export const useApp = create<State>()(
     }),
     {
       name: "medsbuddy-v1",
-      skipHydration: true,
       storage: createJSONStorage(() => {
         if (typeof window === "undefined") {
           return {
