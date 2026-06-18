@@ -31,6 +31,9 @@ function useOnline() {
 export function AppShell({ children, title, transparentHeader }: { children: ReactNode; title?: string; transparentHeader?: boolean }) {
   const location = useLocation();
   const online = useOnline();
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => { setIsClient(true); }, []);
 
   useEffect(() => { stopSpeaking(); }, [location.pathname]);
 
