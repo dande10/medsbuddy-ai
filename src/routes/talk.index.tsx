@@ -1,16 +1,18 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useApp } from "@/lib/store";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
-export const Route = createFileRoute("/talk/")({
+export const Route = createFileRoute("/talk")({
   component: TalkRedirect,
 });
 
 function TalkRedirect() {
+  const [mounted, setMounted] = useState(false);
   const navigate = useNavigate();
   const { threads, activeThreadId, createThread } = useApp();
 
   useEffect(() => {
+    setMounted(true);
     const target =
       (activeThreadId && threads.find((t) => t.id === activeThreadId)?.id) ||
       threads[0]?.id ||
