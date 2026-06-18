@@ -212,6 +212,7 @@ function Doctor() {
           {approved && (
             <VisitWorkflow
               meds={meds}
+              patientSummary={draft}
               onSaveVisit={(v) => {
                 state.addVisit(v);
                 toast.success("Visit saved to Health Memory");
