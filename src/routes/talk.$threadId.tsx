@@ -8,6 +8,8 @@ import { speak, stopSpeaking } from "@/lib/voice";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Trash2, Send, Sparkles, History, Plus, X, MessageCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { CloudOff } from "lucide-react";
+import { useConnectivity } from "@/lib/connectivity";
 
 export const Route = createFileRoute("/talk/$threadId")({
   head: () => ({
@@ -90,6 +92,7 @@ function TalkThreadPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { offline } = useConnectivity();
 
   // Mark this thread active when it loads
   useEffect(() => {
@@ -154,6 +157,16 @@ function TalkThreadPage() {
       setSpeaking(true);
       await speak(`Opening ${nav.label}.`, () => setSpeaking(false));
       navigate({ to: nav.to });
+      return;
+    }
+
+    if (offline) {
+      appendToThread(thread.id, { role: "user", content: text });
+      appendToThread(thread.id, {
+        role: "assistant",
+        content:
+          "I'm in Limited Offline Mode right now, so I can't reach the AI advocate or run medical search. Your symptoms, notes, doctor summary, and emergency QR all still work — I'll pick up the conversation as soon as we're back online.",
+      });
       return;
     }
 
@@ -228,6 +241,28 @@ function TalkThreadPage() {
 
         {/* Chat */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 pr-1 -mx-1 px-1">
+          {offline && (
+            <div className="rounded-2xl border border-primary/25 bg-primary/[0.05] p-3.5">
+              <div className="flex items-center gap-2 font-semibold text-primary text-[14px]">
+                <CloudOff className="size-4" /> Limited Offline Mode
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12.5px] mt-2">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-0.5">Available</div>
+                  <div>· Health notes</div>
+                  <div>· Symptoms</div>
+                  <div>· Doctor Summary</div>
+                  <div>· Emergency QR</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-0.5">Unavailable</div>
+                  <div className="text-muted-foreground">· AI Patient Advocate</div>
+                  <div className="text-muted-foreground">· Medical search</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {messages.length === 0 && (
             <div className="py-6">
               <div className="text-center text-sm text-muted-foreground mb-4 inline-flex items-center gap-1.5 mx-auto w-full justify-center">

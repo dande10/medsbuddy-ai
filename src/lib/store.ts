@@ -88,6 +88,7 @@ interface State {
   summaries: DoctorSummary[];
   notes: HealthNote[];
   questions: DoctorQuestion[];
+  simulateOffline: boolean;
   setProfile: (p: Partial<Profile>) => void;
   addMed: (m: Omit<Medication, "id" | "createdAt">) => void;
   removeMed: (id: string) => void;
@@ -106,6 +107,7 @@ interface State {
   addQuestion: (text: string) => DoctorQuestion;
   toggleQuestion: (id: string) => void;
   removeQuestion: (id: string) => void;
+  setSimulateOffline: (v: boolean) => void;
 }
 
 const id = () => Math.random().toString(36).slice(2, 10);
@@ -133,6 +135,7 @@ export const useApp = create<State>()(
       summaries: [],
       notes: [],
       questions: [],
+      simulateOffline: false,
       setProfile: (p) => set({ profile: { ...get().profile, ...p } }),
       addMed: (m) =>
         set({ meds: [...get().meds, { ...m, id: id(), createdAt: Date.now() }] }),
@@ -213,6 +216,7 @@ export const useApp = create<State>()(
           ),
         }),
       removeQuestion: (qid) => set({ questions: get().questions.filter((q) => q.id !== qid) }),
+      setSimulateOffline: (v) => set({ simulateOffline: v }),
     }),
     {
       name: "medsbuddy-v1",
