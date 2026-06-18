@@ -2,10 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { useApp, adherence, type VisitRecord } from "@/lib/store";
 import { speak, stopSpeaking } from "@/lib/voice";
-import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus, ShieldCheck, FileText, Pencil, Check, AlertTriangle, Mic, MicOff, ShieldAlert, History, Trash2, StickyNote } from "lucide-react";
+import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus, ShieldCheck, FileText, Pencil, Check, AlertTriangle, Mic, MicOff, ShieldAlert, History, Trash2, StickyNote, Sparkles, PlayCircle, X, Send, ChevronRight, ListChecks, AlertCircle, ClipboardList, Heart, FlaskConical } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { aiChat } from "@/lib/ai-chat.functions";
+import { useConnectivity } from "@/lib/connectivity";
 
 export const Route = createFileRoute("/doctor")({
   head: () => ({
@@ -607,42 +609,416 @@ function QuickNoteDialog({ onClose, onSave }: { onClose: () => void; onSave: (t:
 }
 
 function VisitHistory({ visits, onRemove }: { visits: VisitRecord[]; onRemove: (id: string) => void }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  const open = visits.find((v) => v.id === openId) ?? null;
   return (
     <Section icon={History} title="Doctor visit history" tint="success">
       <ul className="space-y-3">
         {visits.map((v) => (
-          <li key={v.id} className="rounded-xl border bg-background p-3">
-            <div className="flex items-baseline justify-between gap-2">
-              <div className="font-semibold text-[14px]">
-                {v.specialty ? `${v.specialty} visit` : "Doctor visit"}
-                {v.doctor && v.doctor !== "Unspecified doctor" && <span className="text-muted-foreground font-normal"> · {v.doctor}</span>}
-              </div>
-              <div className="text-[11px] text-muted-foreground shrink-0">
-                {new Date(v.at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-              </div>
-            </div>
-            <div className="mt-1 text-[13px] text-muted-foreground">
-              <span className="font-medium text-foreground">Summary:</span> {v.summary}
-            </div>
-            {v.followUp && (
-              <div className="text-[12px] text-muted-foreground mt-1"><span className="font-medium">Follow-up:</span> {v.followUp}</div>
-            )}
-            {v.recorded && (
-              <div className="text-[11px] inline-flex items-center gap-1 mt-2 text-primary">
-                <Mic className="size-3" /> Recorded{v.durationSec ? ` · ${formatDuration(v.durationSec)}` : ""}
-              </div>
-            )}
-            {v.audioDataUrl && <audio controls src={v.audioDataUrl} className="w-full mt-2" />}
+          <li key={v.id}>
             <button
-              onClick={() => onRemove(v.id)}
-              className="text-[11px] text-muted-foreground hover:text-destructive inline-flex items-center gap-1 mt-2"
+              onClick={() => setOpenId(v.id)}
+              className="w-full text-left rounded-xl border bg-background p-3 hover:bg-secondary/40 transition active:scale-[0.997]"
             >
-              <Trash2 className="size-3" /> Remove visit
+              <div className="flex items-baseline justify-between gap-2">
+                <div className="font-semibold text-[14px]">
+                  {v.specialty ? `${v.specialty} visit` : "Doctor visit"}
+                  {v.doctor && v.doctor !== "Unspecified doctor" && <span className="text-muted-foreground font-normal"> · {v.doctor}</span>}
+                </div>
+                <div className="text-[11px] text-muted-foreground shrink-0">
+                  {new Date(v.at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                </div>
+              </div>
+              <div className="mt-1 text-[13px] text-muted-foreground line-clamp-2">
+                <span className="font-medium text-foreground">Summary:</span> {v.summary}
+              </div>
+              <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground">
+                {v.recorded && (
+                  <span className="inline-flex items-center gap-1 text-primary">
+                    <Mic className="size-3" /> Recorded{v.durationSec ? ` · ${formatDuration(v.durationSec)}` : ""}
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1 ml-auto text-primary font-medium">
+                  Open <ChevronRight className="size-3" />
+                </span>
+              </div>
             </button>
           </li>
         ))}
       </ul>
+      {open && (
+        <VisitDetailDialog
+          visit={open}
+          onClose={() => setOpenId(null)}
+          onRemove={(id) => { onRemove(id); setOpenId(null); }}
+        />
+      )}
     </Section>
+  );
+}
+
+/* ---------------- Visit detail with AI explanation ---------------- */
+
+function VisitDetailDialog({
+  visit, onClose, onRemove,
+}: {
+  visit: VisitRecord;
+  onClose: () => void;
+  onRemove: (id: string) => void;
+}) {
+  const { online } = useConnectivity();
+  const [explanation, setExplanation] = useState<string>("");
+  const [loadingExplain, setLoadingExplain] = useState(false);
+  const [explainError, setExplainError] = useState<string | null>(null);
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [showPlayer, setShowPlayer] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [questions, setQuestions] = useState<{ q: string; a: string }[]>([]);
+  const [askInput, setAskInput] = useState("");
+  const [asking, setAsking] = useState(false);
+
+  // Local extraction (deterministic, offline-safe)
+  const topics = useMemo(() => extractTopics(visit), [visit]);
+  const transcriptText = useMemo(() => buildTranscript(visit), [visit]);
+  const summaryNarration = useMemo(() => buildSummaryNarration(visit), [visit]);
+
+  useEffect(() => () => stopSpeaking(), []);
+
+  const handleExplain = async () => {
+    if (!online) {
+      setExplanation(
+        `Here's a plain-language summary I can give without internet:\n\n${summaryNarration}\n\nConnect to the internet for a deeper AI explanation.`,
+      );
+      return;
+    }
+    setLoadingExplain(true);
+    setExplainError(null);
+    try {
+      const { reply } = await aiChat({
+        data: {
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are MedsBuddy, a compassionate patient advocate. Explain a doctor visit in simple, plain language a patient can easily understand. Be warm and concise (4-6 short sentences). Focus on what happened, what changed, follow-up actions, and any next steps. End with: 'Would you like me to explain any part in more detail?'",
+            },
+            {
+              role: "user",
+              content: `Please explain this doctor visit in plain language:\n\n${transcriptText}`,
+            },
+          ],
+        },
+      });
+      setExplanation(reply);
+    } catch (e) {
+      setExplainError(e instanceof Error ? e.message : "Could not reach AI.");
+    } finally {
+      setLoadingExplain(false);
+    }
+  };
+
+  const handleListen = async () => {
+    if (speaking) { stopSpeaking(); setSpeaking(false); return; }
+    setSpeaking(true);
+    const text = explanation || `Here is a summary of your recent appointment. ${summaryNarration}`;
+    await speak(text, () => setSpeaking(false));
+  };
+
+  const handleAsk = async (q?: string) => {
+    const text = (q ?? askInput).trim();
+    if (!text) return;
+    setAskInput("");
+    if (!online) {
+      setQuestions((qs) => [...qs, { q: text, a: "I'm offline right now, but here's what I can see in the saved visit notes: " + summaryNarration }]);
+      return;
+    }
+    setAsking(true);
+    setQuestions((qs) => [...qs, { q: text, a: "" }]);
+    try {
+      const { reply } = await aiChat({
+        data: {
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are MedsBuddy, a patient advocate. Answer the patient's question using ONLY the visit notes provided. Use plain, kind language. If the answer isn't in the notes, say so honestly and suggest asking the doctor next visit. Keep answers to 1-3 short sentences.",
+            },
+            { role: "user", content: `Visit notes:\n${transcriptText}\n\nQuestion: ${text}` },
+          ],
+        },
+      });
+      setQuestions((qs) => qs.map((row, i) => (i === qs.length - 1 ? { ...row, a: reply } : row)));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not reach AI.";
+      setQuestions((qs) => qs.map((row, i) => (i === qs.length - 1 ? { ...row, a: `Sorry — ${msg}` } : row)));
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-foreground/50 backdrop-blur-sm grid place-items-end sm:place-items-center p-0 sm:p-4" onClick={onClose}>
+      <motion.div
+        initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full sm:max-w-lg bg-card sm:rounded-3xl rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col"
+      >
+        {/* Header / Overview */}
+        <div className="p-5 border-b">
+          <div className="flex items-start gap-3">
+            <div className="size-11 rounded-2xl gradient-hero grid place-items-center text-primary-foreground shrink-0">
+              <Stethoscope className="size-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] text-muted-foreground font-medium">Visit overview</div>
+              <h2 className="text-[17px] font-semibold leading-tight">
+                {visit.specialty ? `${visit.specialty} visit` : "Doctor visit"}
+              </h2>
+              <div className="text-[13px] text-muted-foreground mt-0.5">
+                {visit.doctor && visit.doctor !== "Unspecified doctor" ? visit.doctor + " · " : ""}
+                {new Date(visit.at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                {visit.durationSec ? ` · Duration ${formatDuration(visit.durationSec)}` : ""}
+              </div>
+            </div>
+            <button onClick={onClose} className="size-8 rounded-full bg-secondary grid place-items-center" aria-label="Close">
+              <X className="size-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            <ActionBtn icon={Sparkles} label={loadingExplain ? "Thinking…" : "Explain this visit"} onClick={handleExplain} primary disabled={loadingExplain} />
+            <ActionBtn icon={speaking ? Square : Volume2} label={speaking ? "Stop" : "Listen to summary"} onClick={handleListen} />
+            <ActionBtn icon={FileText} label={showTranscript ? "Hide notes" : "View notes"} onClick={() => setShowTranscript((s) => !s)} />
+            <ActionBtn
+              icon={PlayCircle}
+              label={visit.audioDataUrl ? (showPlayer ? "Hide recording" : "Play recording") : "No recording"}
+              onClick={() => visit.audioDataUrl && setShowPlayer((s) => !s)}
+              disabled={!visit.audioDataUrl}
+            />
+          </div>
+        </div>
+
+        <div className="overflow-y-auto p-5 space-y-4">
+          {/* Explanation */}
+          {(explanation || loadingExplain || explainError) && (
+            <Block icon={Sparkles} title="MedsBuddy explains">
+              {loadingExplain && <div className="text-sm text-muted-foreground">Reading the visit notes and putting it in plain language…</div>}
+              {explainError && <div className="text-sm text-destructive">Sorry — {explainError}</div>}
+              {explanation && <div className="text-[14px] whitespace-pre-wrap leading-relaxed">{explanation}</div>}
+            </Block>
+          )}
+
+          {/* Player */}
+          {showPlayer && visit.audioDataUrl && (
+            <Block icon={PlayCircle} title="Recording">
+              <audio controls src={visit.audioDataUrl} className="w-full" />
+            </Block>
+          )}
+
+          {/* Transcript / notes */}
+          {showTranscript && (
+            <Block icon={FileText} title="Visit notes">
+              <pre className="text-[13px] whitespace-pre-wrap font-sans leading-relaxed">{transcriptText}</pre>
+            </Block>
+          )}
+
+          {/* Important topics */}
+          {topics.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <ListChecks className="size-4 text-primary" />
+                <h3 className="text-[14px] font-semibold">Important topics</h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {topics.map((t, i) => {
+                  const Icon = TOPIC_ICON[t.kind];
+                  const tone = TOPIC_TONE[t.kind];
+                  return (
+                    <div key={i} className={`rounded-xl border p-3 ${tone}`}>
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide opacity-80">
+                        <Icon className="size-3.5" /> {t.label}
+                      </div>
+                      <div className="text-[13px] mt-1 text-foreground/90 whitespace-pre-wrap">{t.detail}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Q&A */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <MessageSquareQuote className="size-4 text-primary" />
+              <h3 className="text-[14px] font-semibold">Ask about this visit</h3>
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {SUGGESTED_QS.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => handleAsk(q)}
+                  disabled={asking}
+                  className="rounded-full bg-secondary text-secondary-foreground text-[12px] px-3 py-1.5 hover:bg-primary/10 hover:text-primary transition disabled:opacity-50"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+            {questions.length > 0 && (
+              <div className="space-y-2 mb-2">
+                {questions.map((row, i) => (
+                  <div key={i} className="rounded-xl border bg-background p-3">
+                    <div className="text-[12px] font-semibold text-primary">You</div>
+                    <div className="text-[13px] mb-2">{row.q}</div>
+                    <div className="text-[12px] font-semibold text-success">MedsBuddy</div>
+                    <div className="text-[13px] text-foreground/90 whitespace-pre-wrap">
+                      {row.a || (asking && i === questions.length - 1 ? "Thinking…" : "")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <form
+              onSubmit={(e) => { e.preventDefault(); handleAsk(); }}
+              className="flex gap-2"
+            >
+              <input
+                value={askInput}
+                onChange={(e) => setAskInput(e.target.value)}
+                placeholder="Ask a question about this visit…"
+                className="flex-1 rounded-xl border bg-background px-3 py-2 text-sm"
+              />
+              <button
+                type="submit"
+                disabled={!askInput.trim() || asking}
+                className="rounded-xl bg-primary text-primary-foreground px-3 py-2 disabled:opacity-50"
+                aria-label="Send question"
+              >
+                <Send className="size-4" />
+              </button>
+            </form>
+            {!online && <div className="text-[11px] text-muted-foreground mt-2">Offline — I'll answer from your saved notes.</div>}
+          </div>
+
+          <button
+            onClick={() => onRemove(visit.id)}
+            className="text-[12px] text-muted-foreground hover:text-destructive inline-flex items-center gap-1"
+          >
+            <Trash2 className="size-3" /> Remove this visit
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+const SUGGESTED_QS = [
+  "What medication changed?",
+  "What should I do next?",
+  "What follow-up is required?",
+  "Explain this in simple language.",
+];
+
+type TopicKind = "medication" | "diagnosis" | "symptom" | "test" | "follow-up" | "lifestyle";
+const TOPIC_ICON: Record<TopicKind, typeof Pill> = {
+  medication: Pill,
+  diagnosis: AlertCircle,
+  symptom: Activity,
+  test: FlaskConical,
+  "follow-up": ClipboardList,
+  lifestyle: Heart,
+};
+const TOPIC_TONE: Record<TopicKind, string> = {
+  medication: "bg-primary/5 border-primary/20 text-primary",
+  diagnosis: "bg-warning/10 border-warning/30 text-warning",
+  symptom: "bg-warning/10 border-warning/30 text-warning",
+  test: "bg-primary/5 border-primary/20 text-primary",
+  "follow-up": "bg-success/10 border-success/30 text-success",
+  lifestyle: "bg-success/10 border-success/30 text-success",
+};
+const TOPIC_LABEL: Record<TopicKind, string> = {
+  medication: "Medications",
+  diagnosis: "New diagnosis",
+  symptom: "Symptoms discussed",
+  test: "Tests ordered",
+  "follow-up": "Follow-up",
+  lifestyle: "Lifestyle",
+};
+
+function extractTopics(v: VisitRecord): { kind: TopicKind; label: string; detail: string }[] {
+  const topics: { kind: TopicKind; label: string; detail: string }[] = [];
+  const push = (kind: TopicKind, detail?: string) => {
+    if (detail && detail.trim()) topics.push({ kind, label: TOPIC_LABEL[kind], detail: detail.trim() });
+  };
+  push("medication", v.medications);
+  push("follow-up", v.followUp);
+  // Lifestyle / care plan
+  push("lifestyle", v.carePlan);
+  // Heuristic: pull "test" / "lab" mentions out of notes
+  const haystack = [v.summary, v.notes, v.questionsAnswered].filter(Boolean).join("\n");
+  if (/\b(lab|test|x-?ray|scan|blood work|ekg|mri|ct)\b/i.test(haystack)) {
+    push("test", findSentencesMatching(haystack, /lab|test|x-?ray|scan|blood work|ekg|mri|ct/i));
+  }
+  if (/\b(diagnos|condition|finding)\b/i.test(haystack)) {
+    push("diagnosis", findSentencesMatching(haystack, /diagnos|condition|finding/i));
+  }
+  if (/\b(symptom|pain|dizz|head|nausea|fatigue|cough)\b/i.test(haystack)) {
+    push("symptom", findSentencesMatching(haystack, /symptom|pain|dizz|head|nausea|fatigue|cough/i));
+  }
+  return topics;
+}
+
+function findSentencesMatching(text: string, re: RegExp): string {
+  return (text.match(/[^.!?\n]+[.!?]?/g) ?? [])
+    .map((s) => s.trim())
+    .filter((s) => re.test(s))
+    .slice(0, 2)
+    .join(" ");
+}
+
+function buildTranscript(v: VisitRecord): string {
+  const parts = [
+    `Visit summary: ${v.summary}`,
+    v.medications && `Medications discussed: ${v.medications}`,
+    v.carePlan && `Care plan: ${v.carePlan}`,
+    v.followUp && `Follow-up actions: ${v.followUp}`,
+    v.questionsAnswered && `Questions answered: ${v.questionsAnswered}`,
+    v.notes && `Appointment notes: ${v.notes}`,
+  ].filter(Boolean);
+  return parts.join("\n\n");
+}
+
+function buildSummaryNarration(v: VisitRecord): string {
+  const bits: string[] = [v.summary];
+  if (v.medications) bits.push(`Medications discussed: ${v.medications}.`);
+  if (v.carePlan) bits.push(`Care plan: ${v.carePlan}.`);
+  if (v.followUp) bits.push(`Follow-up: ${v.followUp}.`);
+  return bits.join(" ");
+}
+
+function ActionBtn({ icon: Icon, label, onClick, primary, disabled }: { icon: typeof Pill; label: string; onClick: () => void; primary?: boolean; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-xl px-3 py-2.5 text-[13px] font-semibold inline-flex items-center justify-center gap-2 transition disabled:opacity-50 ${
+        primary ? "gradient-hero text-primary-foreground shadow-elegant" : "bg-secondary text-secondary-foreground hover:bg-secondary/70"
+      }`}
+    >
+      <Icon className="size-4" /> {label}
+    </button>
+  );
+}
+
+function Block({ icon: Icon, title, children }: { icon: typeof Pill; title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border bg-background p-3.5">
+      <div className="flex items-center gap-2 mb-2">
+        <Icon className="size-4 text-primary" />
+        <h3 className="text-[13px] font-semibold">{title}</h3>
+      </div>
+      {children}
+    </div>
   );
 }
 
