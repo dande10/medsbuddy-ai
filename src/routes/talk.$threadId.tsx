@@ -89,6 +89,7 @@ function TalkThreadPage() {
   const [input, setInput] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
 
   // Mark this thread active when it loads
   useEffect(() => {
@@ -103,6 +104,10 @@ function TalkThreadPage() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages.length, busy]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const sortedThreads = useMemo(
     () => [...threads].sort((a, b) => b.updatedAt - a.updatedAt),
@@ -182,6 +187,10 @@ function TalkThreadPage() {
       setBusy(false);
     }
   };
+
+  if (!mounted) {
+    return <div className="py-20 text-center text-sm text-muted-foreground">Opening MedsBuddy…</div>;
+  }
 
   return (
     <>
