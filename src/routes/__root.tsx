@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { useApp } from "@/lib/store";
 
 function NotFoundComponent() {
   return (
@@ -115,6 +116,12 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    // Rehydrate the persisted Zustand store on the client only, after mount,
+    // to avoid SSR/CSR hydration mismatches.
+    void useApp.persist.rehydrate();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
