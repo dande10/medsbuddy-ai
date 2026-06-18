@@ -1,6 +1,7 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { Home, MessageCircle, Pill, Stethoscope, Clock, AlertTriangle, Users, User } from "lucide-react";
+import { Home, MessageCircle, Pill, Stethoscope, Clock, Siren, User } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { stopSpeaking } from "@/lib/voice";
 
 const navItems = [
@@ -9,7 +10,7 @@ const navItems = [
   { to: "/reminders", icon: Pill, label: "Meds" },
   { to: "/doctor", icon: Stethoscope, label: "Doctor" },
   { to: "/memory", icon: Clock, label: "Memory" },
-  { to: "/emergency", icon: AlertTriangle, label: "SOS" },
+  { to: "/emergency", icon: Siren, label: "SOS" },
 ] as const;
 
 function useOnline() {
@@ -27,19 +28,14 @@ function useOnline() {
   return online;
 }
 
-export function AppShell({ children, title }: { children: ReactNode; title?: string }) {
+export function AppShell({ children, title, transparentHeader }: { children: ReactNode; title?: string; transparentHeader?: boolean }) {
   const location = useLocation();
   const online = useOnline();
 
-  // Stop any speech on route change, tab hide, page unload
-  useEffect(() => {
-    stopSpeaking();
-  }, [location.pathname]);
+  useEffect(() => { stopSpeaking(); }, [location.pathname]);
 
   useEffect(() => {
-    const onVis = () => {
-      if (document.hidden) stopSpeaking();
-    };
+    const onVis = () => { if (document.hidden) stopSpeaking(); };
     const onUnload = () => stopSpeaking();
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("beforeunload", onUnload);
@@ -53,28 +49,26 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="sticky top-0 z-30 bg-background/85 backdrop-blur border-b">
+      <header className={`sticky top-0 z-30 ${transparentHeader ? "bg-transparent" : "bg-background/80 backdrop-blur-xl border-b border-border/60"}`}>
         <div className="mx-auto max-w-2xl px-5 py-3.5 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5">
-            <div className="size-9 rounded-xl bg-primary text-primary-foreground grid place-items-center font-bold">
-              M
+            <div className="relative size-10 rounded-2xl overflow-hidden grid place-items-center shadow-elegant">
+              <div className="absolute inset-0 gradient-hero" />
+              <div className="relative font-bold text-primary-foreground text-lg tracking-tight">M</div>
             </div>
             <div className="leading-tight">
-              <div className="font-semibold">MedsBuddy</div>
-              <div className="text-[11px] text-muted-foreground -mt-0.5">Your AI Patient Advocate</div>
+              <div className="font-semibold text-[15px]">MedsBuddy</div>
+              <div className="text-[11px] text-muted-foreground -mt-0.5">AI Patient Advocate</div>
             </div>
           </Link>
-          <Link
-            to="/profile"
-            className="size-10 rounded-full bg-secondary text-secondary-foreground grid place-items-center"
-            aria-label="Profile"
-          >
-            <User className="size-5" />
+          <Link to="/profile" className="size-10 rounded-full bg-card border grid place-items-center hover:bg-secondary transition-colors" aria-label="Profile">
+            <User className="size-5 text-primary" />
           </Link>
         </div>
         {!online && (
-          <div className="bg-accent text-accent-foreground text-center text-sm font-medium py-1.5 px-4">
-            ● Offline Mode Active — your data is safe and accessible
+          <div className="bg-warning/15 text-foreground text-center text-xs font-medium py-1.5 px-4 border-y border-warning/30">
+            <span className="inline-block size-1.5 rounded-full bg-warning mr-2 align-middle" />
+            Offline Mode Active — your data is safe
           </div>
         )}
         {title && (
@@ -84,39 +78,54 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
         )}
       </header>
 
-      <main className="flex-1 mx-auto max-w-2xl w-full px-5 py-5 pb-28">{children}</main>
+      <AnimatePresence mode="wait">
+        <motion.main
+          key={location.pathname}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+          className="flex-1 mx-auto max-w-2xl w-full px-5 py-5 pb-28"
+        >
+          {children}
+        </motion.main>
+      </AnimatePresence>
 
-      <nav className="fixed bottom-0 inset-x-0 z-40 bg-background/95 backdrop-blur border-t">
+      <nav className="fixed bottom-0 inset-x-0 z-40 bg-background/85 backdrop-blur-xl border-t border-border/60" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="mx-auto max-w-2xl grid grid-cols-6">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active =
-              item.to === "/"
-                ? location.pathname === "/"
-                : location.pathname.startsWith(item.to);
+            const active = item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to);
+            const isSos = item.to === "/emergency";
             return (
               <Link
                 key={item.to}
                 to={item.to}
-                className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition-colors ${
-                  active ? "text-primary" : "text-muted-foreground"
-                }`}
+                className="relative flex flex-col items-center gap-1 pt-2.5 pb-2 text-[10px] font-medium"
               >
-                <Icon className={`size-6 ${active ? "stroke-[2.4]" : ""}`} />
-                {item.label}
+                {active && (
+                  <motion.span
+                    layoutId="navActivePill"
+                    className="absolute top-0 left-1/2 -translate-x-1/2 h-[3px] w-8 rounded-full bg-primary"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <Icon
+                  className={`size-[22px] transition-colors ${
+                    isSos && active ? "text-destructive" :
+                    active ? "text-primary" : "text-muted-foreground"
+                  }`}
+                  strokeWidth={active ? 2.4 : 2}
+                />
+                <span className={`${
+                  isSos && active ? "text-destructive" :
+                  active ? "text-primary" : "text-muted-foreground"
+                }`}>{item.label}</span>
               </Link>
             );
           })}
         </div>
       </nav>
     </div>
-  );
-}
-
-export function CaregiverLink() {
-  return (
-    <Link to="/caregiver" className="inline-flex items-center gap-1.5 text-sm text-primary font-medium">
-      <Users className="size-4" /> Caregiver dashboard
-    </Link>
   );
 }
