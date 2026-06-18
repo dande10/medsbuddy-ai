@@ -6,6 +6,7 @@ import {
   Pill, Stethoscope, Siren, Activity, Mic, FileText, QrCode, Plus, ChevronRight, ShieldCheck, AlertTriangle, CheckCircle2,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -30,12 +31,12 @@ function Home() {
   const upcoming = appointments.filter((a) => a.at >= Date.now()).sort((a, b) => a.at - b.at)[0];
   const profileReady = Boolean(profile.name && (meds.length || profile.allergies || profile.conditions));
 
-  const greeting = (() => {
+  // Compute time-based greeting on the client only to avoid SSR hydration mismatch.
+  const [greeting, setGreeting] = useState("Hello");
+  useEffect(() => {
     const h = new Date().getHours();
-    if (h < 12) return "Good morning";
-    if (h < 18) return "Good afternoon";
-    return "Good evening";
-  })();
+    setGreeting(h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening");
+  }, []);
 
   return (
     <AppShell>
