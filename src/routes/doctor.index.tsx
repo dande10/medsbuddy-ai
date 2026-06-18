@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { DoctorPage } from "./doctor";
+import { DoctorPage } from "@/components/doctor-page";
 
 export const Route = createFileRoute("/doctor/")({
   head: () => ({
