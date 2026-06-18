@@ -21,10 +21,10 @@ export const Route = createFileRoute("/talk")({
 });
 
 const SUGGESTIONS = [
-  "Did I take my medicine today?",
-  "Prepare me for my appointment",
-  "Explain my medication",
-  "Read my health summary",
+  "How are you today?",
+  "Who are you?",
+  "I have a symptom I want to remember",
+  "Help me prepare for my doctor visit",
 ];
 
 function buildSystemPrompt(state: ReturnType<typeof useApp.getState>): string {
