@@ -770,11 +770,11 @@ function VisitDetailDialog({
             {
               role: "system",
               content:
-                "You are MedsBuddy, a compassionate patient advocate. Explain a doctor visit in simple, plain language a patient can easily understand. Be warm and concise (4-6 short sentences). Focus on what happened, what changed, follow-up actions, and any next steps. End with: 'Would you like me to explain any part in more detail?'",
+                "You are MedsBuddy, a compassionate patient advocate. The patient ALREADY KNOWS what they told the doctor (the 'patient summary' is for context only). Your job is to explain the VISIT OUTCOME — what the doctor said, decided, or changed during the appointment. DO NOT repeat or rephrase the patient summary. Focus only on: topics discussed, medication changes, new recommendations, tests ordered, follow-up appointments, and action items. Be warm and concise (4-7 short sentences) in plain language. End with: 'Would you like me to explain any part in more detail?'",
             },
             {
               role: "user",
-              content: `Please explain this doctor visit in plain language:\n\n${transcriptText}`,
+              content: `Explain what happened during this visit. Focus on the outcome — do not repeat the patient summary.\n\n${transcriptText}`,
             },
           ],
         },
