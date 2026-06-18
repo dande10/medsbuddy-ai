@@ -1,6 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Outlet } from "@tanstack/react-router";
-import { AppShell } from "@/components/app-shell";
+import { Link } from "@tanstack/react-router";
 import { useApp, adherence, type VisitRecord } from "@/lib/store";
 import { speak, stopSpeaking } from "@/lib/voice";
 import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus, ShieldCheck, FileText, Pencil, Check, AlertTriangle, Mic, History, Trash2, ChevronRight, ListChecks, AlertCircle, ClipboardList, Heart, FlaskConical, Sparkles, PlayCircle, X, Send, StickyNote, ShieldAlert } from "lucide-react";
