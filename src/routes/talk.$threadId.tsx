@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router";
-import { AppShell } from "@/components/app-shell";
 import { MicButton } from "@/components/mic-button";
 import { AiOrb } from "@/components/ai-orb";
 import { useApp, type ChatMessage } from "@/lib/store";
