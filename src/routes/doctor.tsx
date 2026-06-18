@@ -1145,18 +1145,6 @@ function VisitTimeline({ visit }: { visit: VisitRecord }) {
   );
 }
 
-function _BlockDuplicate({ icon: Icon, title, children }: { icon: typeof Pill; title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border bg-background p-3.5">
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className="size-4 text-primary" />
-        <h3 className="text-[13px] font-semibold">{title}</h3>
-      </div>
-      {children}
-    </div>
-  );
-}
-
 function formatDuration(s: number): string {
   const m = Math.floor(s / 60);
   const r = s % 60;
