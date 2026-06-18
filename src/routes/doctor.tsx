@@ -212,6 +212,7 @@ function Doctor() {
           {approved && (
             <VisitWorkflow
               meds={meds}
+              patientSummary={draft}
               onSaveVisit={(v) => {
                 state.addVisit(v);
                 toast.success("Visit saved to Health Memory");
@@ -263,10 +264,12 @@ type Stage = "ask" | "patient-declined" | "doctor-consent" | "recording" | "summ
 
 function VisitWorkflow({
   meds,
+  patientSummary,
   onSaveVisit,
   onQuickNote,
 }: {
   meds: { name: string; dosage: string }[];
+  patientSummary: string;
   onSaveVisit: (v: Omit<VisitRecord, "id" | "at"> & { at?: number }) => void;
   onQuickNote: (text: string) => void;
 }) {
@@ -344,18 +347,40 @@ function VisitWorkflow({
   };
 
   const handleSaveVisit = (payload: {
-    summary: string; medications: string; carePlan: string; followUp: string; questionsAnswered: string; notes: string;
+    topicsDiscussed: string;
+    medicationChanges: string;
+    newRecommendations: string;
+    testsOrdered: string;
+    followUpAppointments: string;
+    actionItems: string;
+    notes: string;
   }) => {
+    // Build a short Visit Outcome summary that is distinct from the patient's pre-visit summary.
+    const outcomeBits = [
+      payload.topicsDiscussed && `Discussed: ${payload.topicsDiscussed}`,
+      payload.medicationChanges && `Medication changes: ${payload.medicationChanges}`,
+      payload.newRecommendations && `Recommendations: ${payload.newRecommendations}`,
+      payload.testsOrdered && `Tests ordered: ${payload.testsOrdered}`,
+      payload.followUpAppointments && `Follow-up: ${payload.followUpAppointments}`,
+      payload.actionItems && `Action items: ${payload.actionItems}`,
+    ].filter(Boolean) as string[];
+    const outcomeSummary =
+      outcomeBits.length > 0
+        ? outcomeBits.join(". ")
+        : `Visit outcome with ${doctorName || "doctor"}${specialty ? ` (${specialty})` : ""} on ${new Date().toLocaleDateString()}.`;
     onSaveVisit({
       doctor: doctorName.trim() || "Unspecified doctor",
       specialty: specialty.trim() || undefined,
       durationSec: seconds || undefined,
       audioDataUrl,
-      summary: payload.summary.trim(),
-      medications: payload.medications.trim() || undefined,
-      carePlan: payload.carePlan.trim() || undefined,
-      followUp: payload.followUp.trim() || undefined,
-      questionsAnswered: payload.questionsAnswered.trim() || undefined,
+      summary: outcomeSummary,
+      patientSummary: patientSummary?.trim() || undefined,
+      topicsDiscussed: payload.topicsDiscussed.trim() || undefined,
+      medicationChanges: payload.medicationChanges.trim() || undefined,
+      newRecommendations: payload.newRecommendations.trim() || undefined,
+      testsOrdered: payload.testsOrdered.trim() || undefined,
+      followUpAppointments: payload.followUpAppointments.trim() || undefined,
+      actionItems: payload.actionItems.trim() || undefined,
       notes: payload.notes.trim() || undefined,
       recorded: !!audioDataUrl || seconds > 0,
     });
@@ -470,10 +495,7 @@ function VisitWorkflow({
           duration={seconds}
           audioUrl={audioUrl}
           doctorName={doctorName || "your doctor"}
-          defaults={{
-            summary: `Visit with ${doctorName || "doctor"}${specialty ? ` (${specialty})` : ""} on ${new Date().toLocaleDateString()}.`,
-            medications: meds.map((m) => `${m.name} ${m.dosage}`).join(", "),
-          }}
+          patientSummary={patientSummary}
           onCancel={() => {
             if (audioUrl) URL.revokeObjectURL(audioUrl);
             setAudioUrl(null);
@@ -526,44 +548,92 @@ function VisitWorkflow({
 }
 
 function VisitSummaryForm({
-  duration, audioUrl, doctorName, defaults, onCancel, onSave,
+  duration, audioUrl, doctorName, patientSummary, onCancel, onSave,
 }: {
   duration: number;
   audioUrl: string | null;
   doctorName: string;
-  defaults: { summary: string; medications: string };
+  patientSummary?: string;
   onCancel: () => void;
-  onSave: (p: { summary: string; medications: string; carePlan: string; followUp: string; questionsAnswered: string; notes: string }) => void;
+  onSave: (p: {
+    topicsDiscussed: string;
+    medicationChanges: string;
+    newRecommendations: string;
+    testsOrdered: string;
+    followUpAppointments: string;
+    actionItems: string;
+    notes: string;
+  }) => void;
 }) {
-  const [summary, setSummary] = useState(defaults.summary);
-  const [medications, setMedications] = useState(defaults.medications);
-  const [carePlan, setCarePlan] = useState("");
-  const [followUp, setFollowUp] = useState("");
-  const [questionsAnswered, setQuestionsAnswered] = useState("");
+  const [topicsDiscussed, setTopicsDiscussed] = useState("");
+  const [medicationChanges, setMedicationChanges] = useState("");
+  const [newRecommendations, setNewRecommendations] = useState("");
+  const [testsOrdered, setTestsOrdered] = useState("");
+  const [followUpAppointments, setFollowUpAppointments] = useState("");
+  const [actionItems, setActionItems] = useState("");
   const [notes, setNotes] = useState("");
+  const [showPatientSummary, setShowPatientSummary] = useState(false);
+  const canSave =
+    topicsDiscussed.trim() ||
+    medicationChanges.trim() ||
+    newRecommendations.trim() ||
+    testsOrdered.trim() ||
+    followUpAppointments.trim() ||
+    actionItems.trim() ||
+    notes.trim();
   return (
     <div>
       <div className="rounded-xl bg-success/10 border border-success/30 p-3 mb-3 text-[13px]">
         <div className="font-semibold text-success">Recording finished</div>
-        <div className="text-muted-foreground">{formatDuration(duration)} with {doctorName}. Fill in what was discussed below.</div>
+        <div className="text-muted-foreground">
+          {formatDuration(duration)} with {doctorName}. Capture the <strong>visit outcome</strong> below — what the doctor said, decided, or recommended.
+        </div>
         {audioUrl && (
           <audio controls src={audioUrl} className="w-full mt-2" />
         )}
       </div>
-      <Field label="Visit summary"><textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Medications discussed"><textarea rows={2} value={medications} onChange={(e) => setMedications(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Care plan"><textarea rows={2} value={carePlan} onChange={(e) => setCarePlan(e.target.value)} placeholder="e.g. Continue current meds, monitor blood pressure" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Follow-up actions"><textarea rows={2} value={followUp} onChange={(e) => setFollowUp(e.target.value)} placeholder="e.g. Follow-up in 3 months, lab work" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Questions answered"><textarea rows={2} value={questionsAnswered} onChange={(e) => setQuestionsAnswered(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
-      <Field label="Appointment notes"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      {patientSummary && (
+        <div className="rounded-xl border bg-secondary/40 p-3 mb-3 text-[12px]">
+          <button
+            type="button"
+            onClick={() => setShowPatientSummary((s) => !s)}
+            className="font-semibold text-foreground inline-flex items-center gap-1"
+          >
+            <ChevronRight className={`size-3 transition ${showPatientSummary ? "rotate-90" : ""}`} />
+            Patient summary you brought to the visit
+          </button>
+          {showPatientSummary && (
+            <div className="mt-2 text-muted-foreground whitespace-pre-wrap">{patientSummary}</div>
+          )}
+          <div className="mt-1 text-[11px] text-muted-foreground">For reference only — please capture what the doctor said below, not what you told them.</div>
+        </div>
+      )}
+      <div className="text-[12px] font-semibold uppercase tracking-wide text-primary mb-1">Visit outcome</div>
+      <Field label="Topics discussed"><textarea rows={2} value={topicsDiscussed} onChange={(e) => setTopicsDiscussed(e.target.value)} placeholder="e.g. Blood pressure trends, headaches, sleep" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="Medication changes"><textarea rows={2} value={medicationChanges} onChange={(e) => setMedicationChanges(e.target.value)} placeholder="e.g. Increased lisinopril to 20mg; stopped ibuprofen" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="New recommendations"><textarea rows={2} value={newRecommendations} onChange={(e) => setNewRecommendations(e.target.value)} placeholder="e.g. Reduce salt, walk 20 min/day" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="Tests ordered"><textarea rows={2} value={testsOrdered} onChange={(e) => setTestsOrdered(e.target.value)} placeholder="e.g. Blood panel, EKG" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="Follow-up appointments"><textarea rows={2} value={followUpAppointments} onChange={(e) => setFollowUpAppointments(e.target.value)} placeholder="e.g. Cardiology in 3 months" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="Action items for me"><textarea rows={2} value={actionItems} onChange={(e) => setActionItems(e.target.value)} placeholder="e.g. Pick up new prescription, book lab" className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
+      <Field label="Other appointment notes"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" /></Field>
       <div className="flex gap-2 mt-3">
         <button onClick={onCancel} className="flex-1 rounded-xl bg-secondary text-secondary-foreground py-2.5 font-medium">Discard</button>
         <button
-          onClick={() => onSave({ summary, medications, carePlan, followUp, questionsAnswered, notes })}
-          disabled={!summary.trim()}
+          onClick={() =>
+            onSave({
+              topicsDiscussed,
+              medicationChanges,
+              newRecommendations,
+              testsOrdered,
+              followUpAppointments,
+              actionItems,
+              notes,
+            })
+          }
+          disabled={!canSave}
           className="flex-1 rounded-xl bg-primary text-primary-foreground py-2.5 font-semibold disabled:opacity-50"
         >
-          Save visit
+          Save visit outcome
         </button>
       </div>
     </div>
@@ -700,11 +770,11 @@ function VisitDetailDialog({
             {
               role: "system",
               content:
-                "You are MedsBuddy, a compassionate patient advocate. Explain a doctor visit in simple, plain language a patient can easily understand. Be warm and concise (4-6 short sentences). Focus on what happened, what changed, follow-up actions, and any next steps. End with: 'Would you like me to explain any part in more detail?'",
+                "You are MedsBuddy, a compassionate patient advocate. The patient ALREADY KNOWS what they told the doctor (the 'patient summary' is for context only). Your job is to explain the VISIT OUTCOME — what the doctor said, decided, or changed during the appointment. DO NOT repeat or rephrase the patient summary. Focus only on: topics discussed, medication changes, new recommendations, tests ordered, follow-up appointments, and action items. Be warm and concise (4-7 short sentences) in plain language. End with: 'Would you like me to explain any part in more detail?'",
             },
             {
               role: "user",
-              content: `Please explain this doctor visit in plain language:\n\n${transcriptText}`,
+              content: `Explain what happened during this visit. Focus on the outcome — do not repeat the patient summary.\n\n${transcriptText}`,
             },
           ],
         },
@@ -799,6 +869,9 @@ function VisitDetailDialog({
         </div>
 
         <div className="overflow-y-auto p-5 space-y-4">
+          {/* Visit timeline */}
+          <VisitTimeline visit={visit} />
+
           {/* Explanation */}
           {(explanation || loadingExplain || explainError) && (
             <Block icon={Sparkles} title="MedsBuddy explains">
@@ -950,20 +1023,18 @@ function extractTopics(v: VisitRecord): { kind: TopicKind; label: string; detail
   const push = (kind: TopicKind, detail?: string) => {
     if (detail && detail.trim()) topics.push({ kind, label: TOPIC_LABEL[kind], detail: detail.trim() });
   };
-  push("medication", v.medications);
-  push("follow-up", v.followUp);
-  // Lifestyle / care plan
-  push("lifestyle", v.carePlan);
+  push("medication", v.medicationChanges ?? v.medications);
+  push("follow-up", v.followUpAppointments ?? v.followUp);
+  push("lifestyle", v.newRecommendations ?? v.carePlan);
+  push("test", v.testsOrdered);
+  push("symptom", v.topicsDiscussed);
   // Heuristic: pull "test" / "lab" mentions out of notes
-  const haystack = [v.summary, v.notes, v.questionsAnswered].filter(Boolean).join("\n");
-  if (/\b(lab|test|x-?ray|scan|blood work|ekg|mri|ct)\b/i.test(haystack)) {
+  const haystack = [v.summary, v.notes, v.actionItems, v.questionsAnswered].filter(Boolean).join("\n");
+  if (!v.testsOrdered && /\b(lab|test|x-?ray|scan|blood work|ekg|mri|ct)\b/i.test(haystack)) {
     push("test", findSentencesMatching(haystack, /lab|test|x-?ray|scan|blood work|ekg|mri|ct/i));
   }
   if (/\b(diagnos|condition|finding)\b/i.test(haystack)) {
     push("diagnosis", findSentencesMatching(haystack, /diagnos|condition|finding/i));
-  }
-  if (/\b(symptom|pain|dizz|head|nausea|fatigue|cough)\b/i.test(haystack)) {
-    push("symptom", findSentencesMatching(haystack, /symptom|pain|dizz|head|nausea|fatigue|cough/i));
   }
   return topics;
 }
@@ -978,21 +1049,30 @@ function findSentencesMatching(text: string, re: RegExp): string {
 
 function buildTranscript(v: VisitRecord): string {
   const parts = [
-    `Visit summary: ${v.summary}`,
-    v.medications && `Medications discussed: ${v.medications}`,
-    v.carePlan && `Care plan: ${v.carePlan}`,
-    v.followUp && `Follow-up actions: ${v.followUp}`,
+    `Visit outcome summary: ${v.summary}`,
+    v.topicsDiscussed && `Topics discussed: ${v.topicsDiscussed}`,
+    v.medicationChanges && `Medication changes: ${v.medicationChanges}`,
+    v.newRecommendations && `New recommendations: ${v.newRecommendations}`,
+    v.testsOrdered && `Tests ordered: ${v.testsOrdered}`,
+    v.followUpAppointments && `Follow-up appointments: ${v.followUpAppointments}`,
+    v.actionItems && `Action items for the patient: ${v.actionItems}`,
+    v.medications && !v.medicationChanges && `Medications discussed: ${v.medications}`,
+    v.carePlan && !v.newRecommendations && `Care plan: ${v.carePlan}`,
+    v.followUp && !v.followUpAppointments && `Follow-up actions: ${v.followUp}`,
     v.questionsAnswered && `Questions answered: ${v.questionsAnswered}`,
     v.notes && `Appointment notes: ${v.notes}`,
+    v.patientSummary && `(For context only — patient summary brought to the visit: ${v.patientSummary})`,
   ].filter(Boolean);
   return parts.join("\n\n");
 }
 
 function buildSummaryNarration(v: VisitRecord): string {
   const bits: string[] = [v.summary];
-  if (v.medications) bits.push(`Medications discussed: ${v.medications}.`);
-  if (v.carePlan) bits.push(`Care plan: ${v.carePlan}.`);
-  if (v.followUp) bits.push(`Follow-up: ${v.followUp}.`);
+  if (v.medicationChanges) bits.push(`Medication changes: ${v.medicationChanges}.`);
+  if (v.newRecommendations) bits.push(`New recommendations: ${v.newRecommendations}.`);
+  if (v.testsOrdered) bits.push(`Tests ordered: ${v.testsOrdered}.`);
+  if (v.followUpAppointments) bits.push(`Follow-up: ${v.followUpAppointments}.`);
+  if (v.actionItems) bits.push(`Your action items: ${v.actionItems}.`);
   return bits.join(" ");
 }
 
@@ -1018,6 +1098,49 @@ function Block({ icon: Icon, title, children }: { icon: typeof Pill; title: stri
         <h3 className="text-[13px] font-semibold">{title}</h3>
       </div>
       {children}
+    </div>
+  );
+}
+
+function VisitTimeline({ visit }: { visit: VisitRecord }) {
+  const hasPatient = !!visit.patientSummary?.trim();
+  const hasRecording = visit.recorded || !!visit.audioDataUrl;
+  const hasOutcome =
+    !!(visit.topicsDiscussed || visit.medicationChanges || visit.newRecommendations ||
+       visit.testsOrdered || visit.followUpAppointments || visit.actionItems);
+  const hasFollowUp = !!(visit.actionItems || visit.followUpAppointments);
+  const steps: { label: string; sub: string; done: boolean; icon: typeof Pill }[] = [
+    { label: "Patient Summary", sub: hasPatient ? "Brought to the visit" : "Not saved", done: hasPatient, icon: FileText },
+    { label: "Visit Recording", sub: hasRecording ? (visit.durationSec ? `Recorded · ${formatDuration(visit.durationSec)}` : "Recorded") : "No recording", done: hasRecording, icon: Mic },
+    { label: "Visit Outcome Summary", sub: hasOutcome ? "What the doctor said" : "Not captured", done: hasOutcome, icon: Sparkles },
+    { label: "Follow-Up Tasks", sub: hasFollowUp ? "Action items saved" : "None", done: hasFollowUp, icon: ClipboardList },
+  ];
+  return (
+    <div className="rounded-2xl border bg-background p-3.5">
+      <div className="flex items-center gap-2 mb-3">
+        <ListChecks className="size-4 text-primary" />
+        <h3 className="text-[13px] font-semibold">Visit timeline</h3>
+      </div>
+      <ol className="relative">
+        {steps.map((s, i) => {
+          const Icon = s.icon;
+          return (
+            <li key={i} className="flex gap-3 pb-3 last:pb-0 relative">
+              {i < steps.length - 1 && (
+                <span className={`absolute left-3.5 top-7 bottom-0 w-px ${s.done ? "bg-primary/40" : "bg-border"}`} />
+              )}
+              <div className={`size-7 rounded-full grid place-items-center shrink-0 ${s.done ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}>
+                <Icon className="size-3.5" />
+              </div>
+              <div className="flex-1 min-w-0 pt-0.5">
+                <div className={`text-[13px] font-semibold ${s.done ? "text-foreground" : "text-muted-foreground"}`}>{s.label}</div>
+                <div className="text-[11px] text-muted-foreground">{s.sub}</div>
+              </div>
+              {s.done && <Check className="size-4 text-success shrink-0 mt-1" />}
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }
