@@ -2,10 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { useApp, adherence, type VisitRecord } from "@/lib/store";
 import { speak, stopSpeaking } from "@/lib/voice";
-import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus, ShieldCheck, FileText, Pencil, Check, AlertTriangle, Mic, MicOff, ShieldAlert, History, Trash2, StickyNote } from "lucide-react";
+import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus, ShieldCheck, FileText, Pencil, Check, AlertTriangle, Mic, MicOff, ShieldAlert, History, Trash2, StickyNote, Sparkles, PlayCircle, X, Send, ChevronRight, ListChecks, AlertCircle, ClipboardList, Heart, FlaskConical } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { aiChat } from "@/lib/ai-chat.functions";
+import { useConnectivity } from "@/lib/connectivity";
 
 export const Route = createFileRoute("/doctor")({
   head: () => ({
