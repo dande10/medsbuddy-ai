@@ -2,8 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { useApp, adherence } from "@/lib/store";
 import { speak, stopSpeaking } from "@/lib/voice";
-import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus, ShieldCheck, FileText, Pencil, Check, AlertTriangle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 
 export const Route = createFileRoute("/doctor")({
@@ -45,9 +45,16 @@ function buildSummary(state: ReturnType<typeof useApp.getState>): string {
 
 function Doctor() {
   const state = useApp();
-  const { profile, meds, doses, symptoms, appointments } = state;
-  const summary = useMemo(() => buildSummary(state), [state]);
+  const { profile, meds, doses, symptoms, appointments, addSummary } = state;
+  const generated = useMemo(() => buildSummary(state), [state]);
   const [speaking, setSpeaking] = useState(false);
+  const [draft, setDraft] = useState(generated);
+  const [approved, setApproved] = useState(false);
+
+  // If the underlying data changes and the user hasn't approved yet, refresh draft.
+  useEffect(() => {
+    if (!approved) setDraft(generated);
+  }, [generated, approved]);
 
   const adh = adherence(doses, 7);
   const last7 = Date.now() - 7 * 86400000;
@@ -61,8 +68,23 @@ function Doctor() {
     "What new tests or screenings do you recommend?",
   ];
 
-  const handleSpeak = async () => { setSpeaking(true); await speak(summary, () => setSpeaking(false)); };
+  const handleSpeak = async () => {
+    setSpeaking(true);
+    await speak(draft, () => setSpeaking(false));
+  };
   const handleStop = () => { stopSpeaking(); setSpeaking(false); };
+
+  const handleApprove = () => {
+    const text = draft.trim();
+    if (!text) return;
+    addSummary(text);
+    setApproved(true);
+  };
+  const handleEditAgain = () => {
+    stopSpeaking();
+    setSpeaking(false);
+    setApproved(false);
+  };
 
   const empty = !profile.name && meds.length === 0 && symptoms.length === 0;
 
@@ -89,6 +111,47 @@ function Doctor() {
         />
       ) : (
         <>
+          <ReviewBanner approved={approved} />
+
+          <Section icon={FileText} title="Your summary — review before sharing" tint="primary">
+            {!approved ? (
+              <>
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  rows={10}
+                  className="w-full rounded-xl border bg-background px-3 py-2.5 text-[14px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  aria-label="Editable doctor summary"
+                />
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  Edit freely — add notes, remove anything you don't want shared. MedsBuddy will only speak what you approve.
+                </p>
+                <button
+                  onClick={handleApprove}
+                  disabled={!draft.trim()}
+                  className="mt-3 w-full rounded-xl bg-primary text-primary-foreground py-3 font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Check className="size-5" /> Approve summary
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="rounded-xl bg-success/10 border border-success/30 p-3 text-[14px] leading-relaxed whitespace-pre-wrap">
+                  {draft}
+                </div>
+                <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-success font-medium">
+                  <ShieldCheck className="size-3.5" /> Approved & saved to your Memory timeline
+                </div>
+                <button
+                  onClick={handleEditAgain}
+                  className="mt-3 w-full rounded-xl bg-secondary text-secondary-foreground py-2.5 font-medium inline-flex items-center justify-center gap-2"
+                >
+                  <Pencil className="size-4" /> Edit again
+                </button>
+              </>
+            )}
+          </Section>
+
           <Section icon={Pill} title="Medications & adherence" tint="primary">
             <div className="text-3xl font-bold tracking-tight">{adh}%</div>
             <div className="text-xs text-muted-foreground mb-3">7-day adherence</div>
@@ -143,7 +206,12 @@ function Doctor() {
       )}
 
       <div className="sticky bottom-24 mt-5">
-        {!speaking ? (
+        {!approved ? (
+          <div className="w-full rounded-2xl bg-card border border-dashed border-border py-4 px-4 text-center text-sm text-muted-foreground inline-flex items-center justify-center gap-2">
+            <AlertTriangle className="size-4 text-warning" />
+            Approve your summary above to enable Speak for me
+          </div>
+        ) : !speaking ? (
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={handleSpeak}
@@ -162,6 +230,33 @@ function Doctor() {
         <p className="text-[11px] text-muted-foreground text-center mt-2">Generated on your device · works offline</p>
       </div>
     </AppShell>
+  );
+}
+
+function ReviewBanner({ approved }: { approved: boolean }) {
+  if (approved) {
+    return (
+      <div className="rounded-2xl bg-success/10 border border-success/30 p-3 mb-3 flex items-start gap-3">
+        <div className="size-8 rounded-lg bg-success/20 text-success grid place-items-center shrink-0">
+          <ShieldCheck className="size-4" />
+        </div>
+        <div className="text-sm">
+          <div className="font-semibold text-success">Summary approved</div>
+          <div className="text-muted-foreground text-[13px]">MedsBuddy will only read the version you approved aloud.</div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-2xl bg-warning/10 border border-warning/30 p-3 mb-3 flex items-start gap-3">
+      <div className="size-8 rounded-lg bg-warning/20 text-warning grid place-items-center shrink-0">
+        <AlertTriangle className="size-4" />
+      </div>
+      <div className="text-sm">
+        <div className="font-semibold text-warning">Please review your summary before sharing.</div>
+        <div className="text-muted-foreground text-[13px]">You are in control — MedsBuddy never speaks on your behalf without approval.</div>
+      </div>
+    </div>
   );
 }
 
