@@ -1,16 +1,10 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { AppShell } from "@/components/app-shell";
 
 export const Route = createFileRoute("/talk")({
-  head: () => ({
-    meta: [
-      { title: "Talk — MedsBuddy" },
-      { name: "description", content: "Speak naturally with your AI patient advocate." },
-    ],
-  }),
   component: () => (
-    <AppShell>
+    <div className="p-8">
+      <h1 className="text-xl font-bold mb-4">Talk Layout</h1>
       <Outlet />
-    </AppShell>
+    </div>
   ),
 });
