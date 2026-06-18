@@ -1,13 +1,15 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Outlet } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { useApp, adherence, type VisitRecord } from "@/lib/store";
 import { speak, stopSpeaking } from "@/lib/voice";
-import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus, ShieldCheck, FileText, Pencil, Check, AlertTriangle, Mic, History, Trash2, ChevronRight, ListChecks, AlertCircle, ClipboardList, Heart, FlaskConical, Sparkles, PlayCircle, X, Send, MicOff, StickyNote, ShieldAlert } from "lucide-react";
+import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus, ShieldCheck, FileText, Pencil, Check, AlertTriangle, Mic, History, Trash2, ChevronRight, ListChecks, AlertCircle, ClipboardList, Heart, FlaskConical, Sparkles, PlayCircle, X, Send, StickyNote, ShieldAlert } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { aiChat } from "@/lib/ai-chat.functions";
 import { useConnectivity } from "@/lib/connectivity";
+import { useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/doctor")({
   head: () => ({
@@ -16,8 +18,16 @@ export const Route = createFileRoute("/doctor")({
       { name: "description", content: "Premium clinical briefing for your next doctor visit." },
     ],
   }),
-  component: Doctor,
+  component: DoctorLayout,
 });
+
+function DoctorLayout() {
+  return (
+    <AppShell>
+      <Outlet />
+    </AppShell>
+  );
+}
 
 function buildSummary(state: ReturnType<typeof useApp.getState>): string {
   const { profile, meds, doses, symptoms, appointments } = state;
@@ -46,16 +56,15 @@ function buildSummary(state: ReturnType<typeof useApp.getState>): string {
   return lines.join(" ");
 }
 
-function Doctor() {
+export function DoctorPage() {
   const state = useApp();
   const navigate = useNavigate({ from: "/doctor" });
-  const { profile, meds, doses, symptoms, appointments, addSummary, addNote, visits, currentVisitSummary, setCurrentVisitSummary } = state;
+  const { profile, meds, doses, symptoms, appointments, addSummary, addNote, visits, setCurrentVisitSummary } = state;
   const generated = useMemo(() => buildSummary(state), [state]);
   const [speaking, setSpeaking] = useState(false);
   const [draft, setDraft] = useState(generated);
   const [approved, setApproved] = useState(false);
 
-  // If the underlying data changes and the user hasn't approved yet, refresh draft.
   useEffect(() => {
     if (!approved) setDraft(generated);
   }, [generated, approved]);
@@ -94,7 +103,7 @@ function Doctor() {
   const empty = !profile.name && meds.length === 0 && symptoms.length === 0;
 
   return (
-    <AppShell>
+    <>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="rounded-[28px] gradient-hero text-primary-foreground p-6 shadow-elegant mb-5 relative overflow-hidden">
         <div className="absolute -top-16 -right-16 size-48 rounded-full bg-white/10 blur-3xl" />
         <div className="flex items-center gap-3">
@@ -248,7 +257,7 @@ function Doctor() {
           Generated from your device data. No internet required.
         </p>
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -413,7 +422,6 @@ function VisitDetailDialog({
   const [askInput, setAskInput] = useState("");
   const [asking, setAsking] = useState(false);
 
-  // Local extraction (deterministic, offline-safe)
   const topics = useMemo(() => extractTopics(visit), [visit]);
   const transcriptText = useMemo(() => buildTranscript(visit), [visit]);
   const summaryNarration = useMemo(() => buildSummaryNarration(visit), [visit]);
@@ -499,7 +507,6 @@ function VisitDetailDialog({
         onClick={(e) => e.stopPropagation()}
         className="w-full sm:max-w-lg bg-card sm:rounded-3xl rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col"
       >
-        {/* Header / Overview */}
         <div className="p-5 border-b">
           <div className="flex items-start gap-3">
             <div className="size-11 rounded-2xl gradient-hero grid place-items-center text-primary-foreground shrink-0">
@@ -535,10 +542,8 @@ function VisitDetailDialog({
         </div>
 
         <div className="overflow-y-auto p-5 space-y-4">
-          {/* Visit timeline */}
           <VisitTimeline visit={visit} />
 
-          {/* Explanation */}
           {(explanation || loadingExplain || explainError) && (
             <Block icon={Sparkles} title="MedsBuddy explains">
               {loadingExplain && <div className="text-sm text-muted-foreground">Reading the visit notes and putting it in plain language…</div>}
@@ -547,21 +552,18 @@ function VisitDetailDialog({
             </Block>
           )}
 
-          {/* Player */}
           {showPlayer && visit.audioDataUrl && (
             <Block icon={PlayCircle} title="Recording">
               <audio controls src={visit.audioDataUrl} className="w-full" />
             </Block>
           )}
 
-          {/* Transcript / notes */}
           {showTranscript && (
             <Block icon={FileText} title="Visit notes">
               <pre className="text-[13px] whitespace-pre-wrap font-sans leading-relaxed">{transcriptText}</pre>
             </Block>
           )}
 
-          {/* Important topics */}
           {topics.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -585,7 +587,6 @@ function VisitDetailDialog({
             </div>
           )}
 
-          {/* Q&A */}
           <div>
             <div className="flex items-center gap-2 mb-2">
               <MessageSquareQuote className="size-4 text-primary" />
@@ -694,7 +695,6 @@ function extractTopics(v: VisitRecord): { kind: TopicKind; label: string; detail
   push("lifestyle", v.newRecommendations ?? v.carePlan);
   push("test", v.testsOrdered);
   push("symptom", v.topicsDiscussed);
-  // Heuristic: pull "test" / "lab" mentions out of notes
   const haystack = [v.summary, v.notes, v.actionItems, v.questionsAnswered].filter(Boolean).join("\n");
   if (!v.testsOrdered && /\b(lab|test|x-?ray|scan|blood work|ekg|mri|ct)\b/i.test(haystack)) {
     push("test", findSentencesMatching(haystack, /lab|test|x-?ray|scan|blood work|ekg|mri|ct/i));

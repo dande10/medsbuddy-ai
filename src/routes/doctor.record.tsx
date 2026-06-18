@@ -23,7 +23,6 @@ function RecordVisit() {
   const navigate = useNavigate({ from: "/doctor/record" });
   const { currentVisitSummary, addVisit, addNote, setCurrentVisitSummary } = state;
 
-  // If user arrives here without an approved summary, redirect back
   useEffect(() => {
     if (!currentVisitSummary) {
       navigate({ to: "/doctor" });
@@ -45,14 +44,12 @@ function RecordVisit() {
   const streamRef = useRef<MediaStream | null>(null);
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (tickRef.current) window.clearInterval(tickRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const startRecording = async () => {
@@ -70,7 +67,6 @@ function RecordVisit() {
         const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
         const url = URL.createObjectURL(blob);
         setAudioUrl(url);
-        // Only persist audio if reasonably small (<3MB) to avoid blowing localStorage
         if (blob.size <= 3 * 1024 * 1024) {
           const dataUrl = await blobToDataUrl(blob);
           setAudioDataUrl(dataUrl);
@@ -175,7 +171,6 @@ function RecordVisit() {
         <p className="text-sm opacity-90 mt-3">Capture what your doctor says, save the outcome, and keep everything in your Health Memory.</p>
       </motion.div>
 
-      {/* Progress indicator */}
       <div className="flex items-center gap-2 mb-4">
         <StepDot active={stage === "doctor-consent" || stage === "recording" || stage === "summary" || stage === "done"} label="Consent" />
         <div className={`flex-1 h-0.5 ${stage !== "doctor-consent" ? "bg-primary" : "bg-border"}`} />
