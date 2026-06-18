@@ -102,6 +102,9 @@ function Doctor() {
           </div>
         </div>
         <p className="text-sm opacity-90 mt-3">A summary you can read or play aloud at your appointment — generated from your own data, offline-ready.</p>
+        <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur border border-white/25 px-3 py-1 text-[11px] font-semibold">
+          <span className="size-1.5 rounded-full bg-white" /> Offline Ready
+        </div>
       </motion.div>
 
       {empty ? (
@@ -227,7 +230,9 @@ function Doctor() {
             <Square className="size-5 fill-current" /> Stop speaking
           </button>
         )}
-        <p className="text-[11px] text-muted-foreground text-center mt-2">Generated on your device · works offline</p>
+        <p className="text-[11px] text-muted-foreground text-center mt-2">
+          Generated from your device data. No internet required.
+        </p>
       </div>
     </AppShell>
   );
