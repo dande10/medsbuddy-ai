@@ -41,20 +41,20 @@
   --radius: 1rem;
   /* Premium healthcare AI: soft blue-tinted surface, deep ink, electric blue primary */
   --background: oklch(0.984 0.012 250);
-  --foreground: oklch(0.20 0.04 255);
+  --foreground: oklch(0.2 0.04 255);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.20 0.04 255);
+  --card-foreground: oklch(0.2 0.04 255);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.20 0.04 255);
+  --popover-foreground: oklch(0.2 0.04 255);
   --primary: oklch(0.585 0.215 263);
   --primary-foreground: oklch(1 0 0);
   --primary-glow: oklch(0.685 0.18 262);
   --secondary: oklch(0.955 0.025 255);
-  --secondary-foreground: oklch(0.30 0.10 260);
+  --secondary-foreground: oklch(0.3 0.1 260);
   --muted: oklch(0.962 0.018 250);
   --muted-foreground: oklch(0.52 0.04 255);
   --accent: oklch(0.94 0.06 90);
-  --accent-foreground: oklch(0.32 0.10 70);
+  --accent-foreground: oklch(0.32 0.1 70);
   --success: oklch(0.72 0.18 152);
   --warning: oklch(0.78 0.16 80);
   --destructive: oklch(0.64 0.24 27);
@@ -62,15 +62,17 @@
   --border: oklch(0.93 0.015 250);
   --input: oklch(0.94 0.015 250);
   --ring: oklch(0.585 0.215 263);
-  --gradient-hero: linear-gradient(135deg, oklch(0.55 0.22 263) 0%, oklch(0.70 0.18 255) 100%);
+  --gradient-hero: linear-gradient(135deg, oklch(0.55 0.22 263) 0%, oklch(0.7 0.18 255) 100%);
   --gradient-card: linear-gradient(160deg, oklch(1 0 0) 0%, oklch(0.97 0.02 255) 100%);
   --gradient-emergency: linear-gradient(135deg, oklch(0.62 0.24 25) 0%, oklch(0.55 0.24 12) 100%);
   --shadow-elegant: 0 12px 40px -12px color-mix(in oklab, oklch(0.585 0.215 263) 35%, transparent);
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.10);
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.1);
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
+  * {
+    border-color: var(--color-border);
+  }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
@@ -78,69 +80,232 @@
     -webkit-font-smoothing: antialiased;
     font-family: -apple-system, "SF Pro Display", "Inter", system-ui, sans-serif;
   }
-  h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
-  h2 { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.015em; }
-  button, a { -webkit-tap-highlight-color: transparent; }
+  h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+  }
+  h2 {
+    font-size: 1.375rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 @layer utilities {
-  .gradient-hero { background-image: var(--gradient-hero); }
-  .gradient-card { background-image: var(--gradient-card); }
-  .gradient-emergency { background-image: var(--gradient-emergency); }
-  .shadow-elegant { box-shadow: var(--shadow-elegant); }
-  .shadow-card { box-shadow: var(--shadow-card); }
+  .gradient-hero {
+    background-image: var(--gradient-hero);
+  }
+  .gradient-card {
+    background-image: var(--gradient-card);
+  }
+  .gradient-emergency {
+    background-image: var(--gradient-emergency);
+  }
+  .shadow-elegant {
+    box-shadow: var(--shadow-elegant);
+  }
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
 
   .mic-pulse {
     box-shadow: 0 0 0 0 oklch(0.585 0.215 263 / 0.55);
     animation: micPulse 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
   @keyframes micPulse {
-    0% { box-shadow: 0 0 0 0 oklch(0.585 0.215 263 / 0.5); }
-    70% { box-shadow: 0 0 0 32px oklch(0.585 0.215 263 / 0); }
-    100% { box-shadow: 0 0 0 0 oklch(0.585 0.215 263 / 0); }
+    0% {
+      box-shadow: 0 0 0 0 oklch(0.585 0.215 263 / 0.5);
+    }
+    70% {
+      box-shadow: 0 0 0 32px oklch(0.585 0.215 263 / 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 oklch(0.585 0.215 263 / 0);
+    }
   }
 
-  .speaking-glow { animation: speakGlow 1.6s ease-in-out infinite; }
+  .speaking-glow {
+    animation: speakGlow 1.6s ease-in-out infinite;
+  }
   @keyframes speakGlow {
-    0%, 100% { opacity: 0.8; transform: scale(1); }
-    50% { opacity: 1; transform: scale(1.05); }
+    0%,
+    100% {
+      opacity: 0.8;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.05);
+    }
   }
 
   .ai-orb {
-    background: conic-gradient(from 180deg at 50% 50%,
-      oklch(0.70 0.20 255), oklch(0.55 0.24 270),
-      oklch(0.65 0.22 220), oklch(0.70 0.20 255));
+    background: conic-gradient(
+      from 180deg at 50% 50%,
+      oklch(0.7 0.2 255),
+      oklch(0.55 0.24 270),
+      oklch(0.65 0.22 220),
+      oklch(0.7 0.2 255)
+    );
     animation: orbSpin 8s linear infinite;
   }
-  @keyframes orbSpin { to { transform: rotate(360deg); } }
+  @keyframes orbSpin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 
   .ai-halo {
     background: radial-gradient(circle at 30% 30%, oklch(1 0 0 / 0.45), transparent 60%);
   }
 
-  .waveform-bar { animation: waveBar 1s ease-in-out infinite; transform-origin: center; }
+  .waveform-bar {
+    animation: waveBar 1s ease-in-out infinite;
+    transform-origin: center;
+  }
   @keyframes waveBar {
-    0%, 100% { transform: scaleY(0.35); }
-    50% { transform: scaleY(1); }
+    0%,
+    100% {
+      transform: scaleY(0.35);
+    }
+    50% {
+      transform: scaleY(1);
+    }
   }
 
-  .page-fade-in { animation: pageFade 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+  .page-fade-in {
+    animation: pageFade 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
   @keyframes pageFade {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .typing-dot {
     animation: typing 1.4s infinite ease-in-out;
   }
   @keyframes typing {
-    0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
-    30% { opacity: 1; transform: translateY(-3px); }
+    0%,
+    60%,
+    100% {
+      opacity: 0.3;
+      transform: translateY(0);
+    }
+    30% {
+      opacity: 1;
+      transform: translateY(-3px);
+    }
   }
 
-  .sos-pulse { animation: sosPulse 2.2s ease-in-out infinite; }
+  .sos-pulse {
+    animation: sosPulse 2.2s ease-in-out infinite;
+  }
   @keyframes sosPulse {
-    0%, 100% { box-shadow: 0 0 0 0 oklch(0.64 0.24 27 / 0.4); }
-    50% { box-shadow: 0 0 0 24px oklch(0.64 0.24 27 / 0); }
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 oklch(0.64 0.24 27 / 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 24px oklch(0.64 0.24 27 / 0);
+    }
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  #sos-print-card,
+  #sos-print-card * {
+    visibility: visible !important;
+  }
+
+  #sos-print-card {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    padding: 0.35in;
+    background: white;
+  }
+
+  .sos-print-card {
+    width: 3.5in;
+    min-height: 2.2in;
+    border: 2px solid #dc2626;
+    border-radius: 0.14in;
+    padding: 0.16in;
+    color: #0f172a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: grid;
+    grid-template-columns: 1fr 1.04in;
+    gap: 0.12in;
+    page-break-inside: avoid;
+  }
+
+  .sos-print-kicker {
+    color: #dc2626;
+    font-size: 8pt;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .sos-print-title {
+    font-size: 13pt;
+    font-weight: 800;
+    line-height: 1.05;
+  }
+
+  .sos-print-name {
+    font-size: 11pt;
+    font-weight: 700;
+    margin-top: 0.05in;
+  }
+
+  .sos-print-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.05in 0.08in;
+    margin-top: 0.07in;
+  }
+
+  .sos-print-grid div,
+  .sos-print-meds {
+    font-size: 7.2pt;
+    line-height: 1.18;
+  }
+
+  .sos-print-grid strong,
+  .sos-print-meds strong {
+    display: block;
+    color: #2563eb;
+    font-size: 6pt;
+    text-transform: uppercase;
+  }
+
+  .sos-print-meds {
+    margin-top: 0.06in;
+  }
+
+  .sos-print-card img {
+    width: 1.04in;
+    height: 1.04in;
+    align-self: start;
+  }
+
+  @page {
+    margin: 0.2in;
   }
 }

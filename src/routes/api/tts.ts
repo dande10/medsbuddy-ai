@@ -4,9 +4,12 @@ export const Route = createFileRoute("/api/tts")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const key = process.env.ELEVENLABS_API_KEY;
+        const key = process.env.ELEVENLABS_API_KEY?.trim();
         if (!key) return new Response("Missing ELEVENLABS_API_KEY", { status: 500 });
-        const body = (await request.json().catch(() => null)) as { text?: string; voiceId?: string } | null;
+        const body = (await request.json().catch(() => null)) as {
+          text?: string;
+          voiceId?: string;
+        } | null;
         const text = body?.text?.trim();
         if (!text) return new Response("text required", { status: 400 });
         const voiceId = body?.voiceId ?? "EXAVITQu4vr4xnSDxMaL"; // Sarah - warm

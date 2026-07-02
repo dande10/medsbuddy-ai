@@ -1,89 +1,1583 @@
-import { Link } from "@tanstack/react-router";
-import { useApp, adherence, type VisitRecord } from "@/lib/store";
+import { useApp, adherence } from "@/lib/store";
 import { speak, stopSpeaking } from "@/lib/voice";
-import { Volume2, Square, Stethoscope, Pill, Activity, Calendar, MessageSquareQuote, Plus, ShieldCheck, FileText, Pencil, Check, AlertTriangle, Mic, History, Trash2, ChevronRight, ListChecks, AlertCircle, ClipboardList, Heart, FlaskConical, Sparkles, PlayCircle, X, Send, StickyNote, ShieldAlert } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { aiChat } from "@/lib/ai-chat.functions";
+import {
+  Activity,
+  Calendar,
+  Check,
+  ClipboardList,
+  FileText,
+  Mic,
+  Pill,
+  ShieldCheck,
+  Sparkles,
+  Stethoscope,
+  Volume2,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { aiChat } from "@/lib/ai-chat.functions";
-import { useConnectivity } from "@/lib/connectivity";
-import { useNavigate } from "@tanstack/react-router";
 
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  0: { transcript: string };
+};
 
-function buildSummary(state: ReturnType<typeof useApp.getState>): string {
-  const { profile, meds, doses, symptoms, appointments } = state;
+type SpeechRecognitionEventLike = Event & {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: SpeechRecognitionResultLike;
+  };
+};
+
+type SpeechRecognitionErrorEventLike = Event & {
+  error?: string;
+};
+
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  }
+}
+
+function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string {
+  const { profile, meds, doses, symptoms } = state;
   const adh = adherence(doses, 7);
   const last7 = Date.now() - 7 * 86400000;
   const taken = doses.filter((d) => d.at >= last7 && d.status === "taken").length;
   const missed = doses.filter((d) => d.at >= last7 && d.status !== "taken").length;
-  const recentSymp = symptoms.filter((s) => s.at >= last7);
-  const sympCounts: Record<string, number> = {};
-  for (const s of recentSymp) sympCounts[s.name] = (sympCounts[s.name] ?? 0) + 1;
-  const lines: string[] = [];
-  lines.push(`Hello doctor. This is a summary for ${profile.name || "the patient"}.`);
-  if (meds.length) lines.push(`Current medications: ${meds.map((m) => `${m.name} ${m.dosage}`).join(", ")}.`);
-  lines.push(`Over the last 7 days, medication adherence is ${adh} percent, with ${taken} doses taken and ${missed} missed or skipped.`);
-  if (recentSymp.length) {
-    const parts = Object.entries(sympCounts).map(([n, c]) => `${n}${c > 1 ? ` ${c} times` : ""}`);
-    lines.push(`Reported symptoms include ${parts.join(", ")}.`);
-  } else {
-    lines.push("No symptoms reported this week.");
+  const recentSymptoms = symptoms.filter((s) => s.at >= last7);
+  const symptomText = recentSymptoms.length
+    ? recentSymptoms
+        .slice(0, 4)
+        .map((s) => `${s.name} severity ${s.severity}`)
+        .join(", ")
+    : "no symptoms logged this week";
+  const medText = meds.length
+    ? meds.map((m) => `${m.name} ${m.dosage}`).join(", ")
+    : "no medications listed";
+
+  const adherenceText = doses.length
+    ? `7-day adherence: ${adh} percent, with ${taken} taken and ${missed} missed or skipped doses.`
+    : "No recent medication dose logs are available yet, so adherence cannot be calculated.";
+
+  return [
+    `Patient: ${profile.name || "Demo patient"}.`,
+    `Current medications: ${medText}.`,
+    adherenceText,
+    `Recent symptoms: ${symptomText}.`,
+    profile.conditions ? `Conditions: ${profile.conditions}.` : "",
+    profile.allergies ? `Allergies: ${profile.allergies}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+type DemoStage = "idle" | "consent" | "active" | "summary";
+type ConversationSpeaker = "Doctor" | "Patient" | "MedsBuddy";
+type SpeakerMode = "Auto" | "Doctor" | "Patient";
+type SpeakerDetectionSource = "elevenlabs_label" | "local_rules" | "llm";
+type SpeakerClassification = {
+  speaker: ConversationSpeaker;
+  confidence: number;
+  reason: string;
+  source: SpeakerDetectionSource;
+};
+type ConversationMessage = {
+  speaker: ConversationSpeaker;
+  text: string;
+  speakerConfidence?: number;
+  speakerReason?: string;
+  speakerSource?: SpeakerDetectionSource;
+};
+type DoctorVisitConsent = "pending" | "granted" | "declined";
+type AdvocateAlertTopic =
+  | "patient-symptom-clarification"
+  | "dizziness-after-medication"
+  | "missed-medication-doses"
+  | "medication-side-effects"
+  | "care-plan-warning-signs"
+  | "follow-up-timing"
+  | "diagnosis-explanation";
+type AdvocateAlert = { topic: AdvocateAlertTopic; response: string };
+type AdvocateIntent =
+  | "direct_call"
+  | "patient_history_request"
+  | "medication_history_request"
+  | "sleep_history_request"
+  | "visit_summary_request"
+  | "warning_signs_request"
+  | "doctor_answers_request"
+  | "care_plan_instruction"
+  | "normal_conversation"
+  | "none";
+type SemanticIntentDecision = {
+  speaker: "doctor" | "patient" | "medsbuddy" | "unknown";
+  intent: AdvocateIntent;
+  shouldRespond: boolean;
+  response: string;
+};
+type VisitSummaryData = {
+  visitSummary: string;
+  diagnosis: string;
+  medicationChanges: string;
+  followUpInstructions: string;
+  nextAppointmentQuestions: string;
+  patientConcerns: string;
+  doctorAssessment: string;
+  medsBuddyQuestions: string;
+  doctorAnswers: string;
+  medicationGuidance: string;
+  warningSigns: string;
+  followUpPlan: string;
+  simpleExplanation: string;
+  caregiverSummary: string;
+};
+
+const WAKE_WORD_PATTERN =
+  /\b(?:(?:hey|okay|ok|hello|hi)\s+)?(?:meds\s*buddy|medz\s*buddy|medsbuddy|medbuddy|miss\s*buddy|mrs\s*buddy|matt'?s?\s*body|meds\s*body|miss\s*body|it'?s\s*buddy|made\s+his\s+body)\b/i;
+const ADVOCATE_ALERT_COOLDOWN_MS = 8000;
+
+function cleanSpeechToTextTranscript(text: string): string {
+  let cleaned = text.replace(/\s+/g, " ").trim();
+
+  // Common STT cleanup for the live doctor demo. This runs before speaker detection,
+  // so a bad transcript like "listen to how is your leg pain" can still be
+  // classified as Doctor instead of Patient.
+  const replacements: Array<[RegExp, string]> = [
+    [/\bvicente\b/gi, "Vasanthi"],
+    [/\bvasanthi\b/gi, "Vasanthi"],
+    [/\blike\s+banks\b/gi, "leg pain"],
+    [/\blike\s+paints\b/gi, "leg pain"],
+    [/\blight\s+banks\b/gi, "leg pain"],
+    [/\blake\s+pain\b/gi, "leg pain"],
+    [/\bleg\s+paints\b/gi, "leg pain"],
+    [/\blike\s+pain\b/gi, "leg pain"],
+    [/^listen to how is your leg pain[?.]?$/i, "How is your leg pain?"],
+    [/^listen to how is your (.+)$/i, "How is your $1?"],
+    [/^no i don't have like paints[.]?$/i, "No, I don't have leg pain."],
+    [/^i know i don't have any like banks[.]?$/i, "No, I don't have any leg pain."],
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    cleaned = cleaned.replace(pattern, replacement);
   }
-  if (profile.allergies) lines.push(`Allergies: ${profile.allergies}.`);
-  if (profile.conditions) lines.push(`Conditions: ${profile.conditions}.`);
-  const upcoming = appointments.filter((a) => a.at >= Date.now()).sort((a, b) => a.at - b.at)[0];
-  if (upcoming) lines.push(`Upcoming visit with ${upcoming.doctor} on ${new Date(upcoming.at).toLocaleDateString()}.`);
-  lines.push("I would like to discuss adherence, any new symptoms, and possible medication adjustments.");
-  return lines.join(" ");
+
+  return cleaned
+    .replace(/\s+([?.!,])/g, "$1")
+    .replace(/\?\?+/g, "?")
+    .trim();
+}
+
+function cleanTranscriptInput(text: string): string {
+  return cleanSpeechToTextTranscript(text.replace(/^\s*(doctor|patient|medsbuddy)\s*:\s*/i, ""));
+}
+
+function normalizeTranscriptText(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function splitIntoPhrases(text: string): string[] {
+  return text
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+|\n+|;\s*/)
+    .map((phrase) => phrase.trim())
+    .filter(Boolean);
+}
+
+function removeDuplicateRepeatedPhrases(text: string): string {
+  const seen = new Set<string>();
+  const phrases: string[] = [];
+  for (const phrase of splitIntoPhrases(text)) {
+    const key = normalizeTranscriptText(phrase);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    phrases.push(phrase);
+  }
+  return phrases.join(" ");
+}
+
+function isLowValueTranscript(text: string): boolean {
+  const clean = normalizeTranscriptText(text)
+    .replace(/[^\w\s]/g, "")
+    .trim();
+  if (!clean) return true;
+  if (/^(doctor|patient|medsbuddy|say doctor|a doctor|the doctor)$/.test(clean)) return true;
+  if (/^\d+\s*(a\s*)?doctor$/.test(clean)) return true;
+  return clean.split(/\s+/).length < 3 && !WAKE_WORD_PATTERN.test(clean);
+}
+
+function getTranscriptDelta(currentTranscript: string, lastProcessedTranscript: string): string {
+  const current = currentTranscript.trim();
+  const previous = lastProcessedTranscript.trim();
+  if (!previous) return current;
+  if (normalizeTranscriptText(current) === normalizeTranscriptText(previous)) return "";
+  if (current.startsWith(previous)) return current.slice(previous.length).trim();
+  return current;
+}
+
+function parseTranscriptMessages(
+  transcript: string,
+  selectedSpeaker: SpeakerMode,
+  existingMessages: ConversationMessage[] = [],
+): ConversationMessage[] {
+  const clean = transcript.trim();
+  if (!clean) return [];
+  const speakerPattern = /(Doctor|Patient|MedsBuddy)\s*:/gi;
+  const matches = [...clean.matchAll(speakerPattern)];
+  if (!matches.length) {
+    const cleanedText = removeDuplicateRepeatedPhrases(clean);
+    if (selectedSpeaker !== "Auto") {
+      return [{ speaker: selectedSpeaker, text: cleanedText }];
+    }
+
+    const turns = splitTranscriptIntoPossibleTurns(cleanedText);
+    const messages: ConversationMessage[] = [];
+    for (const turn of turns) {
+      const context = [...existingMessages, ...messages];
+      const classification = classifySpeakerFromTranscript(turn, context);
+      messages.push({
+        speaker: classification.speaker,
+        text: turn,
+        speakerConfidence: classification.confidence,
+        speakerReason: classification.reason,
+        speakerSource: classification.source,
+      });
+    }
+    return messages;
+  }
+
+  const messages: ConversationMessage[] = [];
+  for (const [index, match] of matches.entries()) {
+    const start = (match.index ?? 0) + match[0].length;
+    const end = matches[index + 1]?.index ?? clean.length;
+    const text = removeDuplicateRepeatedPhrases(clean.slice(start, end));
+    if (!text) continue;
+    const matchedSpeaker = match[1] as ConversationSpeaker;
+    const classification = classifySpeakerFromTranscript(
+      text,
+      [...existingMessages, ...messages],
+      matchedSpeaker,
+    );
+    messages.push({
+      speaker: classification.speaker,
+      text,
+      speakerConfidence: classification.confidence,
+      speakerReason: classification.reason,
+      speakerSource: classification.source,
+    });
+  }
+  return messages;
+}
+
+function splitTranscriptIntoPossibleTurns(text: string): string[] {
+  const phrases = splitIntoPhrases(text);
+  if (phrases.length > 1) return phrases;
+
+  return text
+    .replace(
+      /\b(doctor|patient|medsbuddy)\b\s*/gi,
+      (match) => `\n${match.replace(/\s+/g, " ").trim()} `,
+    )
+    .split(/\n+/)
+    .map((turn) => turn.trim())
+    .filter((turn) => turn.split(/\s+/).length >= 3 || WAKE_WORD_PATTERN.test(turn));
+}
+
+function semanticSpeakerToConversationSpeaker(
+  speaker: SemanticIntentDecision["speaker"],
+): ConversationSpeaker | null {
+  if (speaker === "doctor") return "Doctor";
+  if (speaker === "patient") return "Patient";
+  if (speaker === "medsbuddy") return "MedsBuddy";
+  return null;
+}
+
+function lastMedsBuddyQuestionWasForDoctor(messages: ConversationMessage[]): boolean {
+  const lastMessage = [...messages].reverse().find((message) => message.speaker !== "Patient");
+  if (lastMessage?.speaker !== "MedsBuddy") return false;
+  return /\b(doctor|could you|can you|should she|should he|warning signs?|follow[-\s]?up|urgent care|medical attention|on .* behalf|please clarify|please confirm)\b/i.test(
+    lastMessage.text,
+  );
+}
+
+function looksLikeDoctorAnswerToMedsBuddy(text: string): boolean {
+  const clean = normalizeTranscriptText(text);
+  return /\b(yes|no|correct|that's right|that is right|i recommend|she should|he should|the patient should|seek|urgent care|immediate medical attention|emergency|monitor|follow up|follow-up|come back|continue|start|stop|take|drink|hydrate|blood pressure|medication|side effects?|symptoms occur|watch for)\b/i.test(
+    clean,
+  );
+}
+
+function classifySpeakerFromTranscript(
+  text: string,
+  existingMessages: ConversationMessage[],
+  hintedSpeaker?: ConversationSpeaker,
+): SpeakerClassification {
+  const clean = normalizeTranscriptText(text);
+  const withoutWakeWord = normalizeTranscriptText(text.replace(WAKE_WORD_PATTERN, " "));
+  const recentHumanMessages = [...existingMessages]
+    .reverse()
+    .filter((message) => message.speaker === "Doctor" || message.speaker === "Patient");
+  const recentHumanMessage = recentHumanMessages[0];
+  const previousHumanMessage = recentHumanMessages[1];
+
+  // If MedsBuddy just asked the doctor a clarification question, the next clinical answer
+  // is usually the doctor. This fixes lines like "Yes, seek immediate medical attention"
+  // being mislabeled as Patient.
+  if (
+    lastMedsBuddyQuestionWasForDoctor(existingMessages) &&
+    looksLikeDoctorAnswerToMedsBuddy(text)
+  ) {
+    return {
+      speaker: "Doctor",
+      confidence: 0.96,
+      reason:
+        "MedsBuddy just asked the doctor a clarification question and this is medical guidance.",
+      source: "local_rules",
+    };
+  }
+
+  // Strong doctor/request/exam-question cues. These should be Doctor even without wake word.
+  if (
+    /\b(can you|could you|please|give me|show me|tell me|pull up|what medications|what medicine|patient history|medical history|medication history|current meds?|last dose|adherence|summary|main concern|chief complaint|warning signs|follow[-\s]?up plan|how is your|how are your|are you having|do you have|any chest pain|difficulty breathing|what brings you|when did|where is your pain)\b/i.test(
+      withoutWakeWord,
+    )
+  ) {
+    return {
+      speaker: "Doctor",
+      confidence: 0.92,
+      reason: "Doctor-style request, exam question, medication question, or follow-up question.",
+      source: "local_rules",
+    };
+  }
+
+  if (
+    /\b(i|i'm|i am|i’ve|i have|me|my|mine)\b/i.test(withoutWakeWord) &&
+    /\b(have|had|feel|feeling|get|getting|missed|took|taking|hurt|hurts|pain|fever|dizzy|dizziness|tired|fatigue|nausea|vomit|headache|back pain|leg pain|sick|weak|worse|better|sleep|sleeping)\b/i.test(
+      withoutWakeWord,
+    )
+  ) {
+    return {
+      speaker: "Patient",
+      confidence: 0.9,
+      reason: "First-person symptom, pain, feeling, or medication-experience statement.",
+      source: "local_rules",
+    };
+  }
+
+  if (
+    /\b(pain|fever|dizzy|dizziness|tired|fatigue|nausea|vomit|headache|back pain|leg pain|sick|weak|symptom|symptoms)\b/i.test(
+      withoutWakeWord,
+    ) &&
+    !/\b(what|when|how|does she|does he|is she|is he|patient history|give me|show me|tell me|check|seek|urgent care|medical attention|warning signs|symptoms occur|monitor|follow up|follow-up)\b/i.test(
+      withoutWakeWord,
+    )
+  ) {
+    return {
+      speaker: "Patient",
+      confidence: 0.82,
+      reason: "Symptom report without doctor-style question or care-plan language.",
+      source: "local_rules",
+    };
+  }
+
+  if (/^patient\b/i.test(clean)) {
+    return {
+      speaker: "Patient",
+      confidence: 0.78,
+      reason: "Transcript explicitly starts with patient.",
+      source: "local_rules",
+    };
+  }
+  if (WAKE_WORD_PATTERN.test(text) || looksLikeDoctorRequestForMedsBuddy(text)) {
+    return {
+      speaker: "Doctor",
+      confidence: 0.84,
+      reason: "MedsBuddy was called or the sentence requests advocate help.",
+      source: "local_rules",
+    };
+  }
+
+  if (recentHumanMessage?.speaker === "Doctor") {
+    if (looksLikeDoctorQuestionToPatient(recentHumanMessage.text)) {
+      return {
+        speaker: "Patient",
+        confidence: 0.72,
+        reason: "Previous doctor message was a question to the patient.",
+        source: "local_rules",
+      };
+    }
+    if (previousHumanMessage?.speaker === "Patient" && looksLikeDoctorCarePlanInstruction(text)) {
+      return {
+        speaker: "Doctor",
+        confidence: 0.78,
+        reason: "Care-plan instruction after patient response.",
+        source: "local_rules",
+      };
+    }
+  }
+
+  if (
+    recentHumanMessage?.speaker === "Patient" &&
+    (looksLikeDoctorCarePlanInstruction(text) || looksLikeDoctorQuestionToPatient(text))
+  ) {
+    return {
+      speaker: "Doctor",
+      confidence: 0.78,
+      reason: "Doctor-style care-plan instruction or question after patient response.",
+      source: "local_rules",
+    };
+  }
+
+  if (
+    /\b(take|continue|stop|start|prescribe|prescribed|schedule|follow up|follow-up|come back|urgent care|emergency|medical attention|seek care|seek immediate|warning signs|blood pressure|antibiotic|amoxicillin|dose|twice|daily|every day|how long|when did|what brings|symptoms|history|medication|monitor|recommend)\b/i.test(
+      clean,
+    )
+  ) {
+    return {
+      speaker: "Doctor",
+      confidence: 0.82,
+      reason: "Diagnosis, medication instruction, warning sign, or follow-up language.",
+      source: "local_rules",
+    };
+  }
+
+  if (/\?$/.test(clean)) {
+    return {
+      speaker: "Doctor",
+      confidence: 0.74,
+      reason: "Question mark suggests doctor question.",
+      source: "local_rules",
+    };
+  }
+
+  if (hintedSpeaker && hintedSpeaker !== "MedsBuddy") {
+    return {
+      speaker: hintedSpeaker,
+      confidence: 0.68,
+      reason: "ElevenLabs diarization label used as a hint; local rules were inconclusive.",
+      source: "elevenlabs_label",
+    };
+  }
+
+  if (recentHumanMessage?.speaker) {
+    return {
+      speaker: recentHumanMessage.speaker,
+      confidence: 0.58,
+      reason: "Local rules were inconclusive; using recent conversation flow.",
+      source: "local_rules",
+    };
+  }
+
+  return {
+    speaker: "Patient",
+    confidence: 0.52,
+    reason: "Local rules were inconclusive; defaulting to Patient.",
+    source: "local_rules",
+  };
+}
+
+function inferSpeakerFromTranscript(
+  text: string,
+  existingMessages: ConversationMessage[],
+): ConversationSpeaker {
+  return classifySpeakerFromTranscript(text, existingMessages).speaker;
+}
+
+function looksLikeDoctorQuestionToPatient(text: string): boolean {
+  const clean = normalizeTranscriptText(text);
+  return (
+    /\?$/.test(clean) ||
+    /\b(what brings|how are you|how have you|how long|when did|are you taking|do you have|any fever|any pain|tell me|describe|where is|does it|is it|have you)\b/i.test(
+      clean,
+    )
+  );
+}
+
+function dedupeConversation(messages: ConversationMessage[]): ConversationMessage[] {
+  const seen = new Set<string>();
+  const cleanMessages: ConversationMessage[] = [];
+  for (const message of messages) {
+    const text = removeDuplicateRepeatedPhrases(message.text);
+    const key = `${message.speaker}:${normalizeTranscriptText(text)}`;
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    cleanMessages.push({ ...message, text });
+  }
+  return cleanMessages;
+}
+
+function conversationToTranscript(messages: ConversationMessage[]): string {
+  return dedupeConversation(messages)
+    .map((row) => `${row.speaker}: ${row.text}`)
+    .join("\n");
+}
+
+function getSpeakerLines(messages: ConversationMessage[], speaker: ConversationSpeaker): string[] {
+  return dedupeConversation(messages)
+    .filter((message) => message.speaker === speaker)
+    .map((message) => message.text);
+}
+
+function joinLines(lines: string[], fallback: string): string {
+  const clean = lines.map(removeDuplicateRepeatedPhrases).filter(Boolean);
+  return clean.length ? clean.join(" ") : fallback;
+}
+
+function getPatientConcernText(messages: ConversationMessage[]): string {
+  return joinLines(
+    getSpeakerLines(messages, "Patient"),
+    "No patient concerns have been captured yet.",
+  );
+}
+
+function getDoctorAnswerText(messages: ConversationMessage[]): string {
+  return joinLines(
+    getSpeakerLines(messages, "Doctor"),
+    "No doctor response has been captured yet.",
+  );
+}
+
+function getWarningSignText(messages: ConversationMessage[]): string {
+  const warningLines = getSpeakerLines(messages, "Doctor").filter((line) =>
+    /warning|urgent|emergency|103|chest pain|shortness of breath|severe|faint|confusion|worse|worsen/i.test(
+      line,
+    ),
+  );
+  return joinLines(
+    warningLines,
+    "Warning signs have not been discussed yet. MedsBuddy can ask the doctor to clarify them.",
+  );
+}
+
+function getLastMedicationText(state: ReturnType<typeof useApp.getState>): string {
+  const lastDose = [...state.doses].sort((a, b) => b.at - a.at)[0];
+  if (lastDose) {
+    return `${lastDose.medName} was last marked ${lastDose.status} on ${new Date(lastDose.at).toLocaleString()}.`;
+  }
+  const firstMedication = state.meds[0];
+  if (firstMedication) {
+    return `${state.meds.map((med) => `${med.name} ${med.dosage}, ${med.frequency}`).join("; ")}. I do not have enough recent dose history recorded yet to determine adherence or missed doses.`;
+  }
+  return "I do not see any medication or recent dose history recorded yet.";
+}
+
+function getSleepHistoryText(state: ReturnType<typeof useApp.getState>): string {
+  const sleepNotes = [
+    ...state.symptoms
+      .filter((symptom) =>
+        /sleep|insomnia|tired|fatigue|drows/i.test(`${symptom.name} ${symptom.notes ?? ""}`),
+      )
+      .map((symptom) => `${symptom.name}${symptom.notes ? `: ${symptom.notes}` : ""}`),
+    ...state.notes
+      .filter((note) => /sleep|insomnia|tired|fatigue|drows/i.test(note.text))
+      .map((note) => note.text),
+  ];
+  if (sleepNotes.length) {
+    return `Sleep-related notes I found: ${sleepNotes.slice(0, 2).join(" ")}`;
+  }
+  return "I do not see a sleep concern recorded yet. Doctor, you may want to ask how many hours she slept, whether sleep was interrupted, and whether medication made her drowsy.";
+}
+
+function getPatientHistoryText(state: ReturnType<typeof useApp.getState>): string {
+  const { profile, meds, symptoms } = state;
+  const history = [
+    profile.conditions ? `Conditions: ${profile.conditions}.` : "",
+    profile.allergies ? `Allergies: ${profile.allergies}.` : "",
+    meds.length
+      ? `Current medications: ${meds.map((m) => `${m.name} ${m.dosage}`).join(", ")}.`
+      : "No medications are listed.",
+    symptoms.length
+      ? `Recent symptoms include ${symptoms
+          .slice(-4)
+          .map((s) => s.name)
+          .join(", ")}.`
+      : "No recent symptoms are logged.",
+  ].filter(Boolean);
+  return history.join(" ");
+}
+
+function looksLikeDoctorCarePlanInstruction(text: string): boolean {
+  const clean = normalizeTranscriptText(text);
+  if (/give me|tell me|show me|patient history|history|details|information/.test(clean)) {
+    return false;
+  }
+  return /(?:i will|i'll|we will|start|prescrib|give (?:her|him|the patient|you)|take|continue|stop|finish|schedule|follow up|follow-up|twice|daily|every day|amoxicillin|antibiotic|mg|tablet|capsule)/i.test(
+    clean,
+  );
+}
+
+function buildCarePlanAcknowledgement(text: string): string {
+  const instruction = cleanTranscriptInput(text)
+    .replace(WAKE_WORD_PATTERN, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `Understood, Doctor. I captured this care instruction: ${instruction}. Please confirm the dose, timing, and duration so I can summarize it clearly for the patient.`;
+}
+
+const AI = {
+  detectIntent({
+    text,
+    speaker,
+    advocateActive,
+  }: {
+    text: string;
+    speaker?: ConversationSpeaker;
+    advocateActive: boolean;
+  }): AdvocateIntent {
+    const calledMedsBuddy = WAKE_WORD_PATTERN.test(text);
+    const doctorCanRequest = speaker === "Doctor";
+    const clean = normalizeTranscriptText(text.replace(WAKE_WORD_PATTERN, " "));
+
+    if (doctorCanRequest && looksLikeDoctorCarePlanInstruction(clean)) {
+      return "care_plan_instruction";
+    }
+
+    if (
+      doctorCanRequest &&
+      /\b(history|background|previous|record|information|details)\b/i.test(clean)
+    ) {
+      return "patient_history_request";
+    }
+
+    if (
+      doctorCanRequest &&
+      /\b(last medication|last medicine|medication|medicine|dose|taking|took|current meds?|prescription)\b/i.test(
+        clean,
+      )
+    ) {
+      return "medication_history_request";
+    }
+
+    if (doctorCanRequest && /\b(sleep|sleeping|slept|drowsy|tired|fatigue)\b/i.test(clean)) {
+      return "sleep_history_request";
+    }
+
+    if (
+      doctorCanRequest &&
+      /\b(summari[sz]e|main concerns?|chief complaint|recap)\b/i.test(clean)
+    ) {
+      return "visit_summary_request";
+    }
+
+    if (doctorCanRequest && /\b(warning signs?|urgent care|emergency|seek care)\b/i.test(clean)) {
+      return "warning_signs_request";
+    }
+
+    if (
+      doctorCanRequest &&
+      /\b(doctor.*say|answer|care plan|follow[-\s]?up|instructions?|what did you capture)\b/i.test(
+        clean,
+      )
+    ) {
+      return "doctor_answers_request";
+    }
+
+    if (calledMedsBuddy) return "direct_call";
+
+    // After visit consent, MedsBuddy should understand natural doctor requests
+    // from the conversation context. It should not require the doctor to say
+    // "MedsBuddy" every time. Normal conversation still returns none.
+    return "none";
+  },
+};
+
+function buildIntentResponse(
+  intent: AdvocateIntent,
+  text: string,
+  messages: ConversationMessage[],
+  state: ReturnType<typeof useApp.getState>,
+): string | null {
+  switch (intent) {
+    case "patient_history_request":
+      return `Yes, Doctor. On Vasanthi's behalf, here is the relevant patient history: ${getPatientHistoryText(state)}`;
+    case "medication_history_request":
+      return `Yes, Doctor. On Vasanthi's behalf, here is the medication context I found: ${getLastMedicationText(state)}`;
+    case "sleep_history_request":
+      return `Yes, Doctor. On Vasanthi's behalf, here is the sleep context: ${getSleepHistoryText(state)}`;
+    case "visit_summary_request":
+      return `Yes, Doctor. On Vasanthi's behalf, the main concerns captured so far are: ${getPatientConcernText(messages)}`;
+    case "warning_signs_request":
+      return `Doctor, for Vasanthi's safety, the warning signs captured so far are: ${getWarningSignText(messages)}`;
+    case "doctor_answers_request":
+      return `Doctor, here is what I captured from your guidance so far: ${getDoctorAnswerText(messages)}`;
+    case "care_plan_instruction":
+      return buildCarePlanAcknowledgement(text);
+    case "direct_call":
+      return "Yes, Doctor. I am listening and can speak on Vasanthi's behalf. What would you like to know?";
+    case "normal_conversation":
+      return null;
+    case "none":
+      return null;
+  }
+}
+
+function isFastLocalIntent(intent: AdvocateIntent): boolean {
+  return (
+    intent === "direct_call" ||
+    intent === "patient_history_request" ||
+    intent === "medication_history_request" ||
+    intent === "sleep_history_request" ||
+    intent === "visit_summary_request" ||
+    intent === "warning_signs_request" ||
+    intent === "doctor_answers_request" ||
+    intent === "care_plan_instruction"
+  );
+}
+
+async function detectSemanticIntentWithLLM({
+  latestTranscript,
+  currentTranscript,
+  patientContext,
+  state,
+}: {
+  latestTranscript: string;
+  currentTranscript: string;
+  patientContext: string;
+  state: ReturnType<typeof useApp.getState>;
+}): Promise<SemanticIntentDecision | null> {
+  const medicationHistory =
+    state.meds.map((med) => `${med.name} ${med.dosage} (${med.frequency})`).join("; ") ||
+    "No medications listed.";
+  const doseHistory =
+    state.doses
+      .slice(0, 8)
+      .map((dose) => `${dose.medName}: ${dose.status} at ${new Date(dose.at).toLocaleString()}`)
+      .join("; ") || "No recent dose history.";
+  const previousVisitSummaries =
+    state.visits
+      .slice(0, 3)
+      .map((visit) => `${new Date(visit.at).toLocaleDateString()}: ${visit.summary}`)
+      .join("\n") || "No previous visit summaries.";
+
+  try {
+    const { reply } = await aiChat({
+      data: {
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You are the semantic intent engine for MedsBuddy, an AI Patient Advocate in a live doctor visit.",
+              "Do not behave like a wake-word assistant. Understand natural language and the visit context.",
+              "After consent is granted, doctor requests should be understood even when the doctor does not say MedsBuddy.",
+              "MedsBuddy's job is to speak directly to the doctor on behalf of the patient when it would help the patient's care or understanding.",
+              "When shouldRespond is true, write the response as spoken words MedsBuddy would say out loud in the exam room.",
+              "Prefer doctor-facing advocacy phrasing such as: Doctor, Vasanthi would like to clarify... or Doctor, on Vasanthi's behalf...",
+              "Return ONLY compact valid JSON. No markdown. No explanation.",
+              '{"speaker":"doctor|patient|medsbuddy|unknown","intent":"patient_history_request|medication_history_request|sleep_history_request|visit_summary_request|warning_signs_request|doctor_answers_request|care_plan_instruction|direct_call|normal_conversation|none","shouldRespond":true|false,"response":"short spoken response or empty string"}',
+              "Speaker rules: doctor usually asks questions, gives diagnosis, medication instructions, warning signs, and follow-up. Patient usually reports symptoms, pain, feelings, and medication experience.",
+              "If MedsBuddy just asked the doctor a clarification question, the next medical guidance should usually be speaker doctor.",
+              "Set shouldRespond true only when MedsBuddy should speak now. Do not require a wake word if the doctor is clearly asking for patient history, medications, symptoms, summary, warning signs, or care-plan clarification.",
+              "If the doctor asks for patient history in any wording, intent is patient_history_request.",
+              "If the doctor asks for meds, dose, last medication, current prescriptions, or adherence, intent is medication_history_request.",
+              "If the doctor asks for summary/main concerns/what has been happening, intent is visit_summary_request.",
+              "If the patient reports a concerning symptom and the doctor has not yet clarified cause, severity, medication relation, warning signs, or next steps, shouldRespond true with a brief doctor-facing clarification question.",
+              "If the doctor gives instructions without timing, side effects, warning signs, or follow-up details, shouldRespond true with a brief doctor-facing clarification question.",
+              "If conversation is normal doctor-patient talk, shouldRespond false and intent normal_conversation.",
+              "If MedsBuddy should answer, keep response under 25 words. Do not overtalk.",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: [
+              `Patient context:\n${patientContext}`,
+              `Medication history:\n${medicationHistory}`,
+              `Dose history:\n${doseHistory}`,
+              `Previous visit summaries:\n${previousVisitSummaries}`,
+              `Current visit transcript:\n${currentTranscript || "No transcript yet."}`,
+              `Latest transcript message:\n${latestTranscript}`,
+            ].join("\n\n"),
+          },
+        ],
+      },
+    });
+    return parseSemanticIntentDecision(reply);
+  } catch {
+    return null;
+  }
+}
+
+function parseSemanticIntentDecision(reply: string): SemanticIntentDecision | null {
+  const jsonText = reply.match(/\{[\s\S]*\}/)?.[0];
+  if (!jsonText) return null;
+  try {
+    const parsed = JSON.parse(jsonText) as Partial<SemanticIntentDecision>;
+    const intent = normalizeAdvocateIntent(parsed.intent);
+    if (!intent) return null;
+    const speaker =
+      parsed.speaker === "doctor" ||
+      parsed.speaker === "patient" ||
+      parsed.speaker === "medsbuddy" ||
+      parsed.speaker === "unknown"
+        ? parsed.speaker
+        : "unknown";
+    return {
+      speaker,
+      intent,
+      shouldRespond: Boolean(parsed.shouldRespond),
+      response: typeof parsed.response === "string" ? parsed.response.trim() : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAdvocateIntent(intent: unknown): AdvocateIntent | null {
+  const value = String(intent ?? "").trim() as AdvocateIntent;
+  const allowed = new Set<AdvocateIntent>([
+    "direct_call",
+    "patient_history_request",
+    "medication_history_request",
+    "sleep_history_request",
+    "visit_summary_request",
+    "warning_signs_request",
+    "doctor_answers_request",
+    "care_plan_instruction",
+    "normal_conversation",
+    "none",
+  ]);
+  return allowed.has(value) ? value : null;
+}
+
+function looksLikeDoctorRequestForMedsBuddy(text: string): boolean {
+  return (
+    AI.detectIntent({
+      text,
+      speaker: "Doctor",
+      advocateActive: true,
+    }) !== "none"
+  );
+}
+
+function analyzeTranscriptForAdvocateAlert(
+  transcript: string,
+  patientContext: string,
+): AdvocateAlert | null {
+  const lines = transcript
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const latestLine = [...lines].reverse().find((line) => /^(Doctor|Patient):/i.test(line));
+  if (!latestLine) return null;
+
+  const [, rawSpeaker = "", rawText = ""] = latestLine.match(/^(Doctor|Patient):\s*(.+)$/i) ?? [];
+  const speaker = rawSpeaker as "Doctor" | "Patient";
+  const latest = normalizeTranscriptText(rawText);
+  const full = normalizeTranscriptText(transcript);
+  const patientName = getPatientFirstName(patientContext);
+
+  if (
+    speaker === "Patient" &&
+    /\b(fever|pain|dizzy|dizziness|fatigue|tired|weak|nausea|vomit|headache|back|leg|chest|shortness of breath)\b/i.test(
+      latest,
+    ) &&
+    !/\b(warning signs?|urgent care|side effects?|follow up|follow-up|why|because|could be|related)\b/i.test(
+      full,
+    )
+  ) {
+    return {
+      topic: "patient-symptom-clarification",
+      response: `Doctor, on ${patientName}'s behalf, could you clarify what might be causing these symptoms, what she should watch for, and when she should seek urgent care?`,
+    };
+  }
+
+  if (
+    speaker === "Patient" &&
+    /\b(dizzy|dizziness|lightheaded|light headed)\b/i.test(latest) &&
+    /\b(after|evening|when|taking|took|medication|medicine|pill|dose)\b/i.test(latest)
+  ) {
+    return {
+      topic: "dizziness-after-medication",
+      response: `Doctor, ${patientName} would like to clarify whether the evening dizziness could be related to medication timing, blood pressure changes, or side effects.`,
+    };
+  }
+
+  if (
+    speaker === "Patient" &&
+    /\b(missed|forgot|skipped|did not take|didn't take)\b/i.test(latest) &&
+    /\b(dose|doses|medication|medicine|pill|antibiotic)\b/i.test(latest)
+  ) {
+    return {
+      topic: "missed-medication-doses",
+      response: `Doctor, should ${patientName} restart the missed doses, continue the remaining course, or follow a different plan?`,
+    };
+  }
+
+  if (
+    speaker === "Doctor" &&
+    /\b(follow up|follow-up|come back|see me again|see us again|later)\b/i.test(latest) &&
+    !/\b(tomorrow|today|in \d+|within \d+|next week|this week|\d+\s*(day|days|week|weeks|month|months)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(
+      latest,
+    )
+  ) {
+    return {
+      topic: "follow-up-timing",
+      response: `Doctor, could you clarify when ${patientName} should follow up and what symptoms should make her seek urgent care sooner?`,
+    };
+  }
+
+  if (
+    speaker === "Doctor" &&
+    looksLikeDoctorCarePlanInstruction(latest) &&
+    /\b(medication|medicine|pill|dose|antibiotic|amoxicillin|tablet|capsule|take|continue|start|finish)\b/i.test(
+      latest,
+    ) &&
+    !/\b(side effect|side effects|watch for|dizzy|dizziness|rash|nausea|vomit|diarrhea|allergic|reaction)\b/i.test(
+      latest,
+    ) &&
+    !/\b(side effect|side effects)\b/i.test(full)
+  ) {
+    return {
+      topic: "medication-side-effects",
+      response: `Doctor, could you explain the most important side effects or medication reactions ${patientName} should watch for?`,
+    };
+  }
+
+  if (
+    speaker === "Doctor" &&
+    /\b(continue|monitor|hydrate|hydration|rest|care plan|plan|instructions|take|finish|start)\b/i.test(
+      latest,
+    ) &&
+    !/\b(warning signs?|urgent care|emergency|seek care|call us|go to the er|chest pain|shortness of breath|severe|worse|worsening|faint)\b/i.test(
+      latest,
+    ) &&
+    !/\b(warning signs?|urgent care|emergency|seek care|go to the er)\b/i.test(full)
+  ) {
+    return {
+      topic: "care-plan-warning-signs",
+      response: `Doctor, what warning signs should make ${patientName} seek urgent care or call your office?`,
+    };
+  }
+
+  if (
+    speaker === "Doctor" &&
+    /\b(diagnosis|diagnosed|you have|it is|it's|looks like|infection|viral|bacterial|flu|pneumonia|strep|uti)\b/i.test(
+      latest,
+    ) &&
+    !/\b(means|in simple terms|simple terms|because|explain|caused by|this happens)\b/i.test(latest)
+  ) {
+    return {
+      topic: "diagnosis-explanation",
+      response: `Doctor, could you explain that diagnosis in simple patient-friendly terms for ${patientName}?`,
+    };
+  }
+
+  return null;
+}
+
+function getPatientFirstName(patientContext: string): string {
+  const match = patientContext.match(/Patient:\s*([^.\s]+)/i);
+  return match?.[1] || "the patient";
+}
+
+function buildDoctorConsentMessage(): ConversationMessage {
+  return {
+    speaker: "MedsBuddy",
+    text: "Hello Doctor. I am MedsBuddy, Vasanthi's AI Patient Advocate. With the patient's permission, I would like to speak on her behalf, listen during today's visit, record this conversation, and create a visit summary for her after the appointment. Do I have your consent to participate?",
+  };
+}
+
+function buildVisitOpeningMessages(): ConversationMessage[] {
+  return [
+    {
+      speaker: "MedsBuddy",
+      text: "Thank you, Doctor. Vasanthi has been experiencing a fever around 101.3°F, evening dizziness after taking medication, fatigue, and leg and lower back pain for the past four to five days. She is concerned these symptoms may be related to medication timing or side effects.",
+    },
+    {
+      speaker: "MedsBuddy",
+      text: "I will continue listening and may briefly speak directly to you on Vasanthi's behalf if she needs an important clarification. You can also ask me for patient history, medication details, symptom timeline, or previous visit information at any time.",
+    },
+  ];
+}
+
+function buildSummaryFromTranscript(messages: ConversationMessage[]): VisitSummaryData {
+  const transcript = normalizeTranscriptText(conversationToTranscript(messages));
+  const includes = (pattern: RegExp) => pattern.test(transcript);
+  const patientLines = getSpeakerLines(messages, "Patient");
+  const doctorLines = getSpeakerLines(messages, "Doctor");
+  const medsBuddyLines = getSpeakerLines(messages, "MedsBuddy");
+  const patientConcernText = getPatientConcernText(messages);
+  const doctorAnswerText = getDoctorAnswerText(messages);
+  const warningSignText = getWarningSignText(messages);
+  const medicationFacts = [
+    includes(/missed.*dose|missed.*medication|missed.*medicine/) && "missed doses",
+    includes(/antibiotic/) && "antibiotic use",
+    includes(/blood pressure/) && "blood pressure medication or blood pressure changes",
+    includes(/side effect/) && "possible side effects",
+  ].filter(Boolean);
+  const followUpLines = doctorLines.filter((line) =>
+    /follow[-\s]?up|continue|monitor|schedule|hydration|instructions|next step|plan/i.test(line),
+  );
+  const diagnosisLines = doctorLines.filter((line) =>
+    /diagnos|you have|looks like|infection|viral|bacterial|flu|pneumonia|strep|uti|concern|assessment/i.test(
+      line,
+    ),
+  );
+  const visitSummaryText = patientLines.length
+    ? `Patient discussed: ${patientConcernText} Doctor guidance captured: ${doctorAnswerText}`
+    : "MedsBuddy captured the doctor visit conversation and generated a structured summary.";
+  const diagnosisText = diagnosisLines.length
+    ? diagnosisLines.join(" ")
+    : "No diagnosis was clearly discussed during this visit.";
+  const medicationChangesText = medicationFacts.length
+    ? `Medication discussion included ${medicationFacts.join(", ")}. Follow the doctor's medication instructions from the visit.`
+    : "No clear medication changes were captured.";
+  const followUpText = followUpLines.length
+    ? followUpLines.join(" ")
+    : "No specific follow-up instructions were captured. Ask the doctor when to follow up and what symptoms should prompt urgent care.";
+  const nextQuestions = [
+    !diagnosisLines.length && "What is the likely diagnosis or main concern?",
+    !medicationFacts.length &&
+      "Are there any medication changes, side effects, or missed-dose instructions?",
+    !followUpLines.length && "When should the patient follow up?",
+    warningSignText.includes("not been discussed") &&
+      "What warning signs should prompt urgent care?",
+  ].filter(Boolean);
+
+  return {
+    visitSummary: visitSummaryText,
+    diagnosis: diagnosisText,
+    medicationChanges: medicationChangesText,
+    followUpInstructions: followUpText,
+    nextAppointmentQuestions: nextQuestions.length
+      ? nextQuestions.join(" ")
+      : "No additional next-appointment questions were identified from this visit.",
+    patientConcerns: patientLines.length
+      ? patientConcernText
+      : "Patient concerns were discussed during the visit.",
+    doctorAssessment: doctorLines.length
+      ? doctorAnswerText
+      : "No doctor assessment was captured yet.",
+    medsBuddyQuestions: medsBuddyLines.length
+      ? medsBuddyLines.join(" ")
+      : "MedsBuddy did not need to ask an additional question.",
+    doctorAnswers: doctorLines.length ? doctorAnswerText : "No doctor answers were captured.",
+    medicationGuidance: medicationChangesText,
+    warningSigns: warningSignText,
+    followUpPlan: followUpText,
+    simpleExplanation: patientLines.length
+      ? `The visit focused on: ${patientConcernText} The doctor said: ${doctorAnswerText}`
+      : "MedsBuddy summarized the visit conversation and doctor instructions.",
+    caregiverSummary: patientLines.length
+      ? `Patient concerns: ${patientConcernText} Doctor guidance: ${doctorAnswerText}`
+      : "Share the visit summary with a caregiver so they can help monitor next steps.",
+  };
+}
+
+function buildSpokenVisitSummary(summary: VisitSummaryData): string {
+  return [
+    "Here is your visit summary.",
+    summary.visitSummary,
+    summary.diagnosis && !summary.diagnosis.startsWith("No diagnosis")
+      ? `Diagnosis discussed: ${summary.diagnosis}`
+      : "",
+    summary.medicationChanges && !summary.medicationChanges.startsWith("No clear")
+      ? `Medication guidance: ${summary.medicationChanges}`
+      : "",
+    summary.warningSigns && !summary.warningSigns.includes("not been discussed")
+      ? `Warning signs: ${summary.warningSigns}`
+      : "",
+    summary.followUpInstructions && !summary.followUpInstructions.startsWith("No specific")
+      ? `Follow up: ${summary.followUpInstructions}`
+      : "Please ask the doctor when to follow up and what warning signs should prompt urgent care.",
+    "This is a summary to help you remember the visit. Follow your doctor's instructions.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 export function DoctorPage() {
   const state = useApp();
-  const navigate = useNavigate({ from: "/doctor" });
-  const { profile, meds, doses, symptoms, appointments, addSummary, addNote, visits, setCurrentVisitSummary } = state;
-  const generated = useMemo(() => buildSummary(state), [state]);
-  const [speaking, setSpeaking] = useState(false);
-  const [draft, setDraft] = useState(generated);
-  const [approved, setApproved] = useState(false);
+  const { profile, meds, doses, symptoms, appointments, addSummary, addVisit, addNote } = state;
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+  const [stage, setStage] = useState<DemoStage>("idle");
+  const [patientConsent, setPatientConsent] = useState(false);
+  const [doctorConsent, setDoctorConsent] = useState(false);
+  const [patientSummaryApproved, setPatientSummaryApproved] = useState(false);
+  const [doctorVisitConsent, setDoctorVisitConsent] = useState<DoctorVisitConsent>("pending");
+  const [summarySaved, setSummarySaved] = useState(false);
+  const [visitMessages, setVisitMessages] = useState<ConversationMessage[]>([]);
+  const [wakeStatus, setWakeStatus] = useState("MedsBuddy is listening");
+  const [simulatedTranscript, setSimulatedTranscript] = useState("");
+  const [lastProcessedTranscript, setLastProcessedTranscript] = useState("");
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceSpeaking, setVoiceSpeaking] = useState(false);
+  const [summarySpeaking, setSummarySpeaking] = useState(false);
+  const [advocateActive, setAdvocateActive] = useState(false);
+  const [visitSummary, setVisitSummary] = useState<VisitSummaryData>(() =>
+    buildSummaryFromTranscript([]),
+  );
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const visitMessagesRef = useRef<ConversationMessage[]>([]);
+  const voiceSpeakingRef = useRef(false);
+  const advocateActiveRef = useRef(false);
+  const spokenMedsBuddyKeysRef = useRef<Set<string>>(new Set());
+  const alertedTopicsRef = useRef<Set<AdvocateAlertTopic>>(new Set());
+  const lastAdvocateAlertAtRef = useRef(0);
+  const semanticRequestIdRef = useRef(0);
+  const patientSummary = useMemo(() => buildPatientSummary(state), [state]);
 
   useEffect(() => {
-    if (!approved) setDraft(generated);
-  }, [generated, approved]);
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    return () => stopSpeaking();
+  }, []);
+
+  useEffect(() => {
+    visitMessagesRef.current = visitMessages;
+  }, [visitMessages]);
+
+  useEffect(() => {
+    advocateActiveRef.current = advocateActive;
+  }, [advocateActive]);
 
   const adh = adherence(doses, 7);
   const last7 = Date.now() - 7 * 86400000;
-  const recentSymp = symptoms.filter((s) => s.at >= last7);
+  const recentSymptoms = symptoms.filter((s) => s.at >= last7);
   const upcoming = appointments.filter((a) => a.at >= Date.now()).sort((a, b) => a.at - b.at)[0];
 
-  const questions = [
-    "Could any of my medications be causing my symptoms?",
-    "Should I adjust the timing or dosage of my meds?",
-    "Are there interactions I should know about?",
-    "What new tests or screenings do you recommend?",
-  ];
-
-  const handleSpeak = async () => {
-    setSpeaking(true);
-    await speak(draft, () => setSpeaking(false));
+  const startVisit = () => {
+    setPatientConsent(false);
+    setDoctorConsent(false);
+    setPatientSummaryApproved(false);
+    setStage("consent");
   };
-  const handleStop = () => { stopSpeaking(); setSpeaking(false); };
 
-  const handleApprove = () => {
-    const text = draft.trim();
-    if (!text) return;
-    addSummary(text);
-    setCurrentVisitSummary(text);
-    setApproved(true);
-  };
-  const handleEditAgain = () => {
+  const beginVisit = () => {
+    addSummary(patientSummary);
     stopSpeaking();
-    setSpeaking(false);
-    setApproved(false);
+    spokenMedsBuddyKeysRef.current.clear();
+    alertedTopicsRef.current.clear();
+    lastAdvocateAlertAtRef.current = 0;
+    setDoctorVisitConsent("pending");
+    setVisitMessages([buildDoctorConsentMessage()]);
+    setVisitSummary(buildSummaryFromTranscript([]));
+    setWakeStatus("Waiting for doctor consent");
+    setSimulatedTranscript("");
+    setLastProcessedTranscript("");
+    setSummarySaved(false);
+    setAdvocateActive(false);
+    setStage("active");
+    toast.success("AI Patient Advocate visit started");
   };
 
-  const empty = !profile.name && meds.length === 0 && symptoms.length === 0;
+  useEffect(() => {
+    if (stage !== "active") return;
+
+    const unsaidMessages = visitMessages.filter((message, index) => {
+      if (message.speaker !== "MedsBuddy") return false;
+      const key = `${index}:${normalizeTranscriptText(message.text)}`;
+      if (spokenMedsBuddyKeysRef.current.has(key)) return false;
+      spokenMedsBuddyKeysRef.current.add(key);
+      return true;
+    });
+
+    if (!unsaidMessages.length) return;
+
+    const textToSpeak = unsaidMessages.map((message) => message.text).join(" ");
+    voiceSpeakingRef.current = true;
+    recognitionRef.current?.stop();
+    setVoiceListening(false);
+    setVoiceSpeaking(true);
+    void speak(textToSpeak, () => {
+      voiceSpeakingRef.current = false;
+      setVoiceSpeaking(false);
+    }).catch(() => {
+      voiceSpeakingRef.current = false;
+      setVoiceSpeaking(false);
+    });
+  }, [stage, visitMessages]);
+
+  const handleDoctorConsents = () => {
+    const openingMessages = buildVisitOpeningMessages();
+    setDoctorVisitConsent("granted");
+    setWakeStatus("MedsBuddy is listening");
+    // Once doctor consent is granted, MedsBuddy can respond from conversation context
+    // without requiring the doctor to repeat the wake word.
+    setAdvocateActive(true);
+    advocateActiveRef.current = true;
+    setVisitMessages((messages) => dedupeConversation([...messages, ...openingMessages]));
+    setVisitSummary(buildSummaryFromTranscript(openingMessages));
+  };
+
+  const handleDoctorDeclines = () => {
+    setDoctorVisitConsent("declined");
+    setWakeStatus("Doctor did not consent");
+    setVisitMessages((messages) =>
+      dedupeConversation([
+        ...messages,
+        {
+          speaker: "MedsBuddy",
+          text: "Understood. MedsBuddy will not participate in this visit or record the conversation.",
+        },
+      ]),
+    );
+  };
+
+  const addTranscriptMessages = useCallback(
+    (transcript: string, speaker: SpeakerMode): boolean => {
+      if (!transcript.trim() || isLowValueTranscript(transcript)) return false;
+
+      const cleanedTranscript = cleanSpeechToTextTranscript(transcript);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("RAW_STT_TRANSCRIPT:", transcript);
+        console.log("CLEANED_STT_TRANSCRIPT:", cleanedTranscript);
+      }
+
+      const currentMessages = visitMessagesRef.current;
+      const parsedMessages = parseTranscriptMessages(cleanedTranscript, speaker, currentMessages)
+        .map((message) => ({
+          ...message,
+          text: cleanTranscriptInput(message.text),
+        }))
+        .filter((message) => !isLowValueTranscript(message.text));
+      if (!parsedMessages.length) return false;
+      for (const message of parsedMessages) {
+        console.info("[MedsBuddy speaker detection]", {
+          rawTranscript: transcript,
+          cleanedTranscript,
+          messageText: message.text,
+          detectedSpeaker: message.speaker,
+          confidence: message.speakerConfidence ?? null,
+          source: message.speakerSource ?? "local_rules",
+          reason: message.speakerReason ?? "No speaker reason recorded.",
+        });
+      }
+
+      const nextMessages = dedupeConversation([...currentMessages, ...parsedMessages]);
+      visitMessagesRef.current = nextMessages;
+      setVisitMessages(nextMessages);
+      setWakeStatus("MedsBuddy is understanding the conversation");
+
+      const latestMessage = parsedMessages[parsedMessages.length - 1];
+      const latestText = parsedMessages.map((message) => message.text).join(" ");
+      const latestTurnText = latestMessage?.text ?? latestText;
+      const latestSpeaker = latestMessage?.speaker;
+      const latestSpeakerConfidence = latestMessage?.speakerConfidence ?? 0.75;
+      const needsLlmSpeakerClassification = latestSpeakerConfidence < 0.72;
+      const requestId = semanticRequestIdRef.current + 1;
+      semanticRequestIdRef.current = requestId;
+      const currentTranscript = conversationToTranscript(nextMessages);
+      const fastIntent = AI.detectIntent({
+        text: latestText,
+        speaker: latestSpeaker,
+        advocateActive: advocateActiveRef.current,
+      });
+      const fastResponse =
+        !needsLlmSpeakerClassification &&
+        isFastLocalIntent(fastIntent) &&
+        buildIntentResponse(fastIntent, latestText, nextMessages, state);
+
+      if (fastResponse) {
+        if (fastIntent === "direct_call") {
+          setAdvocateActive(true);
+          advocateActiveRef.current = true;
+        }
+        setWakeStatus(
+          fastIntent === "direct_call"
+            ? "MedsBuddy was called"
+            : "MedsBuddy answered from patient context",
+        );
+        setVisitMessages((messages) => {
+          const withResponse = dedupeConversation([
+            ...messages,
+            { speaker: "MedsBuddy", text: fastResponse },
+          ]);
+          visitMessagesRef.current = withResponse;
+          return withResponse;
+        });
+        return true;
+      }
+
+      const fastAlert = analyzeTranscriptForAdvocateAlert(currentTranscript, patientSummary);
+      const now = Date.now();
+      if (
+        !needsLlmSpeakerClassification &&
+        fastAlert &&
+        !alertedTopicsRef.current.has(fastAlert.topic) &&
+        now - lastAdvocateAlertAtRef.current >= ADVOCATE_ALERT_COOLDOWN_MS
+      ) {
+        alertedTopicsRef.current.add(fastAlert.topic);
+        lastAdvocateAlertAtRef.current = now;
+        setWakeStatus("MedsBuddy noticed a clarification");
+        setVisitMessages((messages) => {
+          const withAlert = dedupeConversation([
+            ...messages,
+            { speaker: "MedsBuddy", text: fastAlert.response },
+          ]);
+          visitMessagesRef.current = withAlert;
+          return withAlert;
+        });
+        return true;
+      }
+
+      void (async () => {
+        const semanticDecision = await detectSemanticIntentWithLLM({
+          latestTranscript: `${latestSpeaker}: ${latestText}`,
+          currentTranscript,
+          patientContext: patientSummary,
+          state,
+        });
+        if (requestId !== semanticRequestIdRef.current) return;
+        if (semanticDecision) {
+          console.info("[MedsBuddy LLM speaker/intent classification]", {
+            rawTranscript: transcript,
+            cleanedTranscript,
+            messageText: latestTurnText,
+            previousSpeaker: latestSpeaker,
+            localConfidence: latestSpeakerConfidence,
+            llmSpeaker: semanticDecision.speaker,
+            intent: semanticDecision.intent,
+            shouldRespond: semanticDecision.shouldRespond,
+          });
+        }
+
+        const fallbackIntent = AI.detectIntent({
+          text: latestText,
+          speaker: latestSpeaker,
+          advocateActive: advocateActiveRef.current,
+        });
+
+        const decision: SemanticIntentDecision = semanticDecision ?? {
+          speaker: latestSpeaker
+            ? (latestSpeaker.toLowerCase() as SemanticIntentDecision["speaker"])
+            : "unknown",
+          intent: fallbackIntent,
+          shouldRespond: fallbackIntent !== "none" && fallbackIntent !== "normal_conversation",
+          response: "",
+        };
+        const correctedSpeaker = semanticSpeakerToConversationSpeaker(decision.speaker);
+        const ignorePatientCorrectionAfterMedsBuddyQuestion =
+          correctedSpeaker === "Patient" &&
+          latestSpeaker === "Doctor" &&
+          lastMedsBuddyQuestionWasForDoctor(visitMessagesRef.current) &&
+          looksLikeDoctorAnswerToMedsBuddy(latestTurnText);
+
+        if (
+          correctedSpeaker &&
+          correctedSpeaker !== "MedsBuddy" &&
+          latestSpeaker &&
+          correctedSpeaker !== latestSpeaker &&
+          !ignorePatientCorrectionAfterMedsBuddyQuestion
+        ) {
+          setVisitMessages((messages) => {
+            const lastIndex = messages.findLastIndex(
+              (message) => message.speaker === latestSpeaker && message.text === latestTurnText,
+            );
+            if (lastIndex < 0) return messages;
+            const corrected = [...messages];
+            corrected[lastIndex] = { ...corrected[lastIndex], speaker: correctedSpeaker };
+            visitMessagesRef.current = corrected;
+            return corrected;
+          });
+        }
+
+        if (decision.intent === "direct_call") {
+          setAdvocateActive(true);
+          advocateActiveRef.current = true;
+        }
+
+        const localIntentResponse = buildIntentResponse(
+          decision.intent,
+          latestText,
+          visitMessagesRef.current,
+          state,
+        );
+        const shouldPreferLocalResponse =
+          decision.intent === "medication_history_request" ||
+          decision.intent === "patient_history_request" ||
+          /\b0 percent|zero taken|zero missed\b/i.test(decision.response);
+
+        const intentResponse =
+          decision.shouldRespond &&
+          (shouldPreferLocalResponse
+            ? localIntentResponse
+            : decision.response || localIntentResponse);
+
+        if (intentResponse) {
+          setWakeStatus(
+            decision.intent === "direct_call"
+              ? "MedsBuddy was called"
+              : "MedsBuddy is answering the doctor",
+          );
+          setVisitMessages((messages) => {
+            const withResponse = dedupeConversation([
+              ...messages,
+              { speaker: "MedsBuddy", text: intentResponse },
+            ]);
+            visitMessagesRef.current = withResponse;
+            return withResponse;
+          });
+        } else {
+          const alert = analyzeTranscriptForAdvocateAlert(
+            conversationToTranscript(visitMessagesRef.current),
+            patientSummary,
+          );
+          const now = Date.now();
+          if (
+            alert &&
+            !alertedTopicsRef.current.has(alert.topic) &&
+            now - lastAdvocateAlertAtRef.current >= ADVOCATE_ALERT_COOLDOWN_MS
+          ) {
+            alertedTopicsRef.current.add(alert.topic);
+            lastAdvocateAlertAtRef.current = now;
+            setWakeStatus("MedsBuddy noticed a clarification");
+            setVisitMessages((messages) => {
+              const withAlert = dedupeConversation([
+                ...messages,
+                { speaker: "MedsBuddy", text: alert.response },
+              ]);
+              visitMessagesRef.current = withAlert;
+              return withAlert;
+            });
+          } else {
+            setWakeStatus(
+              advocateActiveRef.current
+                ? "MedsBuddy is ready for follow-up questions"
+                : "MedsBuddy is listening",
+            );
+          }
+        }
+      })();
+
+      return true;
+    },
+    [patientSummary, state],
+  );
+
+  const handleSimulatedTranscript = () => {
+    const delta = getTranscriptDelta(simulatedTranscript, lastProcessedTranscript);
+    const added = addTranscriptMessages(delta, "Auto");
+    if (!added) return;
+    setLastProcessedTranscript(simulatedTranscript.trim());
+    setSimulatedTranscript("");
+  };
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    setVoiceSupported(Boolean(Recognition));
+
+    if (
+      stage !== "active" ||
+      doctorVisitConsent !== "granted" ||
+      voiceSpeaking ||
+      voiceSpeakingRef.current ||
+      !Recognition
+    ) {
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+      setVoiceListening(false);
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognitionRef.current = recognition;
+
+    recognition.onresult = (event) => {
+      const finalText: string[] = [];
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        if (result?.isFinal) finalText.push(result[0].transcript);
+      }
+      const transcript = finalText.join(" ").trim();
+      if (transcript) {
+        addTranscriptMessages(transcript, "Auto");
+      }
+    };
+
+    recognition.onerror = (event) => {
+      setVoiceListening(false);
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        setWakeStatus("Microphone permission is blocked");
+        toast.error("Microphone permission is blocked. Use the transcript box instead.");
+      }
+    };
+
+    recognition.onend = () => {
+      if (stage === "active" && doctorVisitConsent === "granted" && !voiceSpeakingRef.current) {
+        try {
+          recognition.start();
+          setVoiceListening(true);
+        } catch {
+          setVoiceListening(false);
+        }
+      }
+    };
+
+    try {
+      recognition.start();
+      setVoiceListening(true);
+    } catch {
+      setVoiceListening(false);
+    }
+
+    return () => {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      recognition.stop();
+    };
+  }, [addTranscriptMessages, doctorVisitConsent, mounted, stage, voiceSpeaking]);
+
+  const endVisit = () => {
+    const cleanedMessages = dedupeConversation(visitMessages);
+    const cleanedSummary = buildSummaryFromTranscript(cleanedMessages);
+    setVisitSummary(cleanedSummary);
+    if (!summarySaved) {
+      addVisit({
+        doctor: upcoming?.doctor || "Demo doctor",
+        specialty: upcoming?.specialty || "Primary care",
+        summary: cleanedSummary.visitSummary,
+        patientSummary,
+        topicsDiscussed: cleanedSummary.patientConcerns,
+        diagnosisOrConcerns: cleanedSummary.diagnosis,
+        medicationChanges: cleanedSummary.medicationChanges,
+        actionItems: cleanedSummary.followUpInstructions,
+        questionsAnswered: cleanedSummary.doctorAnswers,
+        carePlan: cleanedSummary.nextAppointmentQuestions,
+        notes: conversationToTranscript(cleanedMessages),
+      });
+      addNote(`AI Patient Advocate follow-up: ${cleanedSummary.followUpInstructions}`);
+      setSummarySaved(true);
+    }
+    setStage("summary");
+    toast.success("AI Patient Advocate summary ready");
+  };
+
+  const speakVisitSummary = () => {
+    stopSpeaking();
+    const spokenSummary = buildSpokenVisitSummary(visitSummary);
+    setSummarySpeaking(true);
+    void speak(spokenSummary, () => setSummarySpeaking(false)).catch(() => {
+      setSummarySpeaking(false);
+      toast.error("Voice summary is not available in this browser.");
+    });
+  };
 
   if (!mounted) {
     return (
@@ -93,788 +1587,554 @@ export function DoctorPage() {
 
   return (
     <>
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="rounded-[28px] gradient-hero text-primary-foreground p-6 shadow-elegant mb-5 relative overflow-hidden">
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-[28px] gradient-hero text-primary-foreground p-6 shadow-elegant mb-5 relative overflow-hidden"
+      >
         <div className="absolute -top-16 -right-16 size-48 rounded-full bg-white/10 blur-3xl" />
         <div className="flex items-center gap-3">
           <div className="size-12 rounded-2xl bg-white/20 backdrop-blur grid place-items-center">
             <Stethoscope className="size-6" />
           </div>
           <div>
-            <div className="text-[12px] opacity-80 font-medium">Clinical briefing</div>
-            <h1 className="text-primary-foreground text-2xl">Doctor visit prep</h1>
+            <div className="text-[12px] opacity-80 font-medium">AI Patient Advocate</div>
+            <h1 className="text-primary-foreground text-2xl">AI Patient Advocate</h1>
           </div>
         </div>
-        <p className="text-sm opacity-90 mt-3">A summary you can read or play aloud at your appointment — generated from your own data, offline-ready.</p>
-        <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur border border-white/25 px-3 py-1 text-[11px] font-semibold">
-          <span className="size-1.5 rounded-full bg-white" /> Offline Ready
-        </div>
+        {stage !== "idle" && (
+          <p className="text-sm opacity-90 mt-3">
+            MedsBuddy listens after consent, speaks directly to the doctor on behalf of the patient
+            when clinically useful, lets the doctor respond, and summarizes the whole visit.
+          </p>
+        )}
       </motion.div>
 
-      {!empty && (
-        <motion.button
-          whileTap={{ scale: 0.98 }}
-          onClick={() => navigate({ to: "/doctor/visit-mode" })}
-          className="w-full rounded-2xl gradient-hero text-primary-foreground py-5 px-4 text-lg font-semibold inline-flex items-center justify-center gap-3 shadow-elegant mb-4 relative overflow-hidden group"
-        >
-          <span className="absolute inset-0 bg-white/0 group-active:bg-white/10 transition" />
-          <Sparkles className="size-6" />
-          <span className="flex flex-col items-start leading-tight text-left">
-            <span>Start Doctor Visit Mode</span>
-            <span className="text-[11px] opacity-80 font-normal">Hands-free guided flow · review → speak → consent → record → summary</span>
-          </span>
-        </motion.button>
-      )}
-
-      {empty ? (
-        <EmptyState
-          title="Let's prepare your first briefing"
-          body="Add a medication and log a symptom or two — MedsBuddy will craft a clinical-grade summary for your next visit."
+      <>
+        <AIAdvocateDemo
+          stage={stage}
+          patientSummary={patientSummary}
+          messages={visitMessages}
+          wakeStatus={wakeStatus}
+          simulatedTranscript={simulatedTranscript}
+          onSimulatedTranscriptChange={setSimulatedTranscript}
+          onSubmitTranscript={handleSimulatedTranscript}
+          onStartVisit={startVisit}
+          onEndVisit={endVisit}
+          doctorVisitConsent={doctorVisitConsent}
+          onDoctorConsents={handleDoctorConsents}
+          onDoctorDeclines={handleDoctorDeclines}
+          voiceSupported={voiceSupported}
+          voiceListening={voiceListening}
+          voiceSpeaking={voiceSpeaking}
         />
-      ) : (
-        <>
-          <ReviewBanner approved={approved} />
 
-          <Section icon={FileText} title="Your summary — review before sharing" tint="primary">
-            {!approved ? (
-              <>
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  rows={10}
-                  className="w-full rounded-xl border bg-background px-3 py-2.5 text-[14px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  aria-label="Editable doctor summary"
-                />
-                <p className="text-[11px] text-muted-foreground mt-2">
-                  Edit freely — add notes, remove anything you don't want shared. MedsBuddy will only speak what you approve.
-                </p>
-                <button
-                  onClick={handleApprove}
-                  disabled={!draft.trim()}
-                  className="mt-3 w-full rounded-xl bg-primary text-primary-foreground py-3 font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <Check className="size-5" /> Approve summary
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="rounded-xl bg-success/10 border border-success/30 p-3 text-[14px] leading-relaxed whitespace-pre-wrap">
-                  {draft}
-                </div>
-                <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-success font-medium">
-                  <ShieldCheck className="size-3.5" /> Approved & saved to your Memory timeline
-                </div>
-                <button
-                  onClick={handleEditAgain}
-                  className="mt-3 w-full rounded-xl bg-secondary text-secondary-foreground py-2.5 font-medium inline-flex items-center justify-center gap-2"
-                >
-                  <Pencil className="size-4" /> Edit again
-                </button>
-              </>
-            )}
-          </Section>
-
-          <Section icon={Pill} title="Medications & adherence" tint="primary">
-            <div className="text-3xl font-bold tracking-tight">{adh}%</div>
-            <div className="text-xs text-muted-foreground mb-3">7-day adherence</div>
-            {meds.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No medications listed.</div>
-            ) : (
-              <ul className="space-y-1.5 text-[14px]">
-                {meds.map((m) => (
-                  <li key={m.id} className="flex justify-between border-t pt-1.5 first:border-0 first:pt-0">
-                    <span className="font-medium">{m.name} <span className="text-muted-foreground font-normal">{m.dosage}</span></span>
-                    <span className="text-muted-foreground text-xs">{m.frequency}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          <Section icon={Activity} title="Recent symptoms" tint="warning">
-            {recentSymp.length === 0 ? (
-              <div className="text-sm text-muted-foreground">None reported this week.</div>
-            ) : (
-              <ul className="space-y-1.5 text-[14px]">
-                {recentSymp.slice(0, 6).map((s) => (
-                  <li key={s.id} className="flex justify-between border-t pt-1.5 first:border-0 first:pt-0">
-                    <span className="capitalize font-medium">{s.name}</span>
-                    <span className="text-xs text-muted-foreground">{new Date(s.at).toLocaleDateString()} · severity {s.severity}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          <Section icon={Calendar} title="Appointments" tint="success">
-            {upcoming ? (
-              <div>
-                <div className="font-medium text-[15px]">{upcoming.doctor}</div>
-                <div className="text-sm text-muted-foreground">{new Date(upcoming.at).toLocaleString()}</div>
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground">No upcoming visits.</div>
-            )}
-          </Section>
-
-          <Section icon={MessageSquareQuote} title="Questions to ask your doctor" tint="primary">
-            <ul className="space-y-2 text-[14px]">
-              {questions.map((q, i) => (
-                <li key={i} className="flex gap-2"><span className="text-primary font-bold">{i + 1}.</span><span>{q}</span></li>
-              ))}
-            </ul>
-          </Section>
-
-          {approved && (
-            <PostApprovePrompt
-              onStartVisit={() => navigate({ to: "/doctor/record" })}
-              onQuickNote={(t) => { addNote(t); toast.success("Note saved to Health Memory"); }}
-            />
-          )}
-
-          {visits.length > 0 && <VisitHistory visits={visits} onRemove={(id) => state.removeVisit(id)} />}
-        </>
-      )}
-
-      <div className="sticky bottom-24 mt-5">
-        {!approved ? (
-          <div className="w-full rounded-2xl bg-card border border-dashed border-border py-4 px-4 text-center text-sm text-muted-foreground inline-flex items-center justify-center gap-2">
-            <AlertTriangle className="size-4 text-warning" />
-            Approve your summary above to enable Speak for me
-          </div>
-        ) : !speaking ? (
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={handleSpeak}
-            className="w-full rounded-2xl gradient-hero text-primary-foreground py-4 text-lg font-semibold inline-flex items-center justify-center gap-3 shadow-elegant"
-          >
-            <Volume2 className="size-6" /> Speak for me
-          </motion.button>
-        ) : (
-          <button
-            onClick={handleStop}
-            className="w-full rounded-2xl bg-destructive text-destructive-foreground py-4 text-lg font-semibold inline-flex items-center justify-center gap-3 sos-pulse"
-          >
-            <Square className="size-5 fill-current" /> Stop speaking
-          </button>
+        {stage === "summary" && (
+          <VisitSummary
+            summary={visitSummary}
+            onSpeakSummary={speakVisitSummary}
+            summarySpeaking={summarySpeaking}
+          />
         )}
-        <p className="text-[11px] text-muted-foreground text-center mt-2">
-          Generated from your device data. No internet required.
-        </p>
-      </div>
+
+        {stage !== "idle" && (
+          <>
+            <Section icon={FileText} title="AI Patient Advocate patient snapshot" tint="primary">
+              <p className="text-[14px] leading-relaxed text-muted-foreground">{patientSummary}</p>
+            </Section>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <MetricSection
+                icon={Pill}
+                title="Medications"
+                value={`${adh}%`}
+                label="7-day adherence"
+              >
+                {meds.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No medications listed.</div>
+                ) : (
+                  <ul className="space-y-1.5 text-[14px]">
+                    {meds.slice(0, 4).map((m) => (
+                      <li
+                        key={m.id}
+                        className="flex justify-between gap-3 border-t pt-1.5 first:border-0"
+                      >
+                        <span className="font-medium">
+                          {m.name}{" "}
+                          <span className="text-muted-foreground font-normal">{m.dosage}</span>
+                        </span>
+                        <span className="text-muted-foreground text-xs">{m.frequency}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </MetricSection>
+
+              <Section icon={Activity} title="Recent symptoms" tint="warning">
+                {recentSymptoms.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">None reported this week.</div>
+                ) : (
+                  <ul className="space-y-1.5 text-[14px]">
+                    {recentSymptoms.slice(0, 4).map((s) => (
+                      <li
+                        key={s.id}
+                        className="flex justify-between gap-3 border-t pt-1.5 first:border-0"
+                      >
+                        <span className="capitalize font-medium">{s.name}</span>
+                        <span className="text-xs text-muted-foreground">Severity {s.severity}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Section>
+            </div>
+
+            <Section icon={Calendar} title="AI Patient Advocate appointment" tint="success">
+              {upcoming ? (
+                <div>
+                  <div className="font-medium text-[15px]">{upcoming.doctor}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {new Date(upcoming.at).toLocaleString()}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  Visit ready without an appointment.
+                </div>
+              )}
+            </Section>
+          </>
+        )}
+      </>
+
+      {stage === "consent" && (
+        <ConsentModal
+          patientSummary={patientSummary}
+          patientConsent={patientConsent}
+          doctorConsent={doctorConsent}
+          patientSummaryApproved={patientSummaryApproved}
+          onPatientConsentChange={setPatientConsent}
+          onDoctorConsentChange={setDoctorConsent}
+          onPatientSummaryApprovedChange={setPatientSummaryApproved}
+          onBeginVisit={beginVisit}
+          onClose={() => setStage("idle")}
+        />
+      )}
     </>
   );
 }
 
-/* ---------------- Post-approve prompt ---------------- */
-
-function PostApprovePrompt({
+function AIAdvocateDemo({
+  stage,
+  patientSummary,
+  messages,
+  wakeStatus,
+  simulatedTranscript,
+  onSimulatedTranscriptChange,
+  onSubmitTranscript,
   onStartVisit,
-  onQuickNote,
+  onEndVisit,
+  doctorVisitConsent,
+  onDoctorConsents,
+  onDoctorDeclines,
+  voiceSupported,
+  voiceListening,
+  voiceSpeaking,
 }: {
+  stage: DemoStage;
+  patientSummary: string;
+  messages: ConversationMessage[];
+  wakeStatus: string;
+  simulatedTranscript: string;
+  onSimulatedTranscriptChange: (value: string) => void;
+  onSubmitTranscript: () => void;
   onStartVisit: () => void;
-  onQuickNote: (text: string) => void;
+  onEndVisit: () => void;
+  doctorVisitConsent: DoctorVisitConsent;
+  onDoctorConsents: () => void;
+  onDoctorDeclines: () => void;
+  voiceSupported: boolean;
+  voiceListening: boolean;
+  voiceSpeaking: boolean;
 }) {
-  const [declined, setDeclined] = useState(false);
-  const [quickNoteOpen, setQuickNoteOpen] = useState(false);
-
-  if (declined) {
-    return (
-      <Section icon={Mic} title="Today's visit" tint="primary">
-        <div className="text-sm text-muted-foreground">
-          No problem — you can come back anytime.{" "}
-          <button className="text-primary font-medium" onClick={() => setDeclined(false)}>Change my mind</button>
-        </div>
-      </Section>
-    );
-  }
-
+  const active = stage === "active";
+  const visitCanListen = doctorVisitConsent === "granted";
   return (
-    <Section icon={Mic} title="Today's visit" tint="primary">
-      <div>
-        <p className="text-sm font-medium">Would you like me to help keep track of today's visit?</p>
-        <p className="text-[12px] text-muted-foreground mt-1">
-          I can record audio (with consent), capture what the doctor said, and save a visit outcome summary to your Health Memory.
-        </p>
-        <div className="flex gap-2 mt-3">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl bg-card border shadow-card p-4 mb-3"
+    >
+      {stage === "idle" && (
+        <>
+          <div className="rounded-xl border bg-background p-3 mb-3">
+            <div className="text-[12px] font-semibold text-primary mb-1">Patient context</div>
+            <p className="text-[13px] text-muted-foreground leading-relaxed">{patientSummary}</p>
+          </div>
           <button
             onClick={onStartVisit}
-            className="flex-1 rounded-xl bg-primary text-primary-foreground py-2.5 font-semibold inline-flex items-center justify-center gap-2"
+            className="w-full rounded-2xl gradient-hero text-primary-foreground py-5 px-4 text-lg font-semibold inline-flex items-center justify-center gap-3 shadow-elegant"
           >
-            <Check className="size-4" /> Yes
+            <Sparkles className="size-6" /> Start Live Visit
           </button>
-          <button
-            onClick={() => setDeclined(true)}
-            className="flex-1 rounded-xl bg-secondary text-secondary-foreground py-2.5 font-medium"
-          >
-            Not now
-          </button>
-        </div>
-        <button
-          onClick={() => setQuickNoteOpen(true)}
-          className="mt-2 w-full rounded-xl bg-secondary text-secondary-foreground py-2 text-sm font-medium inline-flex items-center justify-center gap-2"
-        >
-          <StickyNote className="size-4" /> Quick note instead
-        </button>
-      </div>
-      {quickNoteOpen && (
-        <QuickNoteDialog
-          onClose={() => setQuickNoteOpen(false)}
-          onSave={(t) => { onQuickNote(t); setQuickNoteOpen(false); }}
-        />
+        </>
       )}
-    </Section>
-  );
-}
 
-function QuickNoteDialog({ onClose, onSave }: { onClose: () => void; onSave: (t: string) => void }) {
-  const [text, setText] = useState("");
-  return (
-    <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm grid place-items-end sm:place-items-center p-4" onClick={onClose}>
-      <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-md bg-card rounded-3xl p-5 shadow-2xl">
-        <h2 className="mb-3">Quick visit note</h2>
-        <textarea
-          autoFocus
-          rows={4}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Jot down what the doctor said…"
-          className="w-full rounded-xl border px-3 py-2.5 text-[15px]"
-        />
-        <div className="flex gap-2 mt-4">
-          <button className="flex-1 rounded-xl bg-secondary text-secondary-foreground py-2.5 font-medium" onClick={onClose}>Cancel</button>
-          <button
-            className="flex-1 rounded-xl bg-primary text-primary-foreground py-2.5 font-semibold disabled:opacity-50"
-            disabled={!text.trim()}
-            onClick={() => onSave(text.trim())}
-          >
-            Save note
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-/* ---------------- Visit history ---------------- */
-
-function VisitHistory({ visits, onRemove }: { visits: VisitRecord[]; onRemove: (id: string) => void }) {
-  const [openId, setOpenId] = useState<string | null>(null);
-  const open = visits.find((v) => v.id === openId) ?? null;
-  return (
-    <Section icon={History} title="Doctor visit history" tint="success">
-      <ul className="space-y-3">
-        {visits.map((v) => (
-          <li key={v.id}>
-            <button
-              onClick={() => setOpenId(v.id)}
-              className="w-full text-left rounded-xl border bg-background p-3 hover:bg-secondary/40 transition active:scale-[0.997]"
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <div className="font-semibold text-[14px]">
-                  {v.specialty ? `${v.specialty} visit` : "Doctor visit"}
-                  {v.doctor && v.doctor !== "Unspecified doctor" && <span className="text-muted-foreground font-normal"> · {v.doctor}</span>}
-                </div>
-                <div className="text-[11px] text-muted-foreground shrink-0">
-                  {new Date(v.at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                </div>
-              </div>
-              <div className="mt-1 text-[13px] text-muted-foreground line-clamp-2">
-                <span className="font-medium text-foreground">Summary:</span> {v.summary}
-              </div>
-              <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground">
-                {v.recorded && (
-                  <span className="inline-flex items-center gap-1 text-primary">
-                    <Mic className="size-3" /> Recorded{v.durationSec ? ` · ${formatDuration(v.durationSec)}` : ""}
-                  </span>
-                )}
-                <span className="inline-flex items-center gap-1 ml-auto text-primary font-medium">
-                  Open <ChevronRight className="size-3" />
-                </span>
-              </div>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {open && (
-        <VisitDetailDialog
-          visit={open}
-          onClose={() => setOpenId(null)}
-          onRemove={(id) => { onRemove(id); setOpenId(null); }}
-        />
-      )}
-    </Section>
-  );
-}
-
-/* ---------------- Visit detail with AI explanation ---------------- */
-
-function VisitDetailDialog({
-  visit, onClose, onRemove,
-}: {
-  visit: VisitRecord;
-  onClose: () => void;
-  onRemove: (id: string) => void;
-}) {
-  const { online } = useConnectivity();
-  const [explanation, setExplanation] = useState<string>("");
-  const [loadingExplain, setLoadingExplain] = useState(false);
-  const [explainError, setExplainError] = useState<string | null>(null);
-  const [showTranscript, setShowTranscript] = useState(false);
-  const [showPlayer, setShowPlayer] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
-  const [questions, setQuestions] = useState<{ q: string; a: string }[]>([]);
-  const [askInput, setAskInput] = useState("");
-  const [asking, setAsking] = useState(false);
-
-  const topics = useMemo(() => extractTopics(visit), [visit]);
-  const transcriptText = useMemo(() => buildTranscript(visit), [visit]);
-  const summaryNarration = useMemo(() => buildSummaryNarration(visit), [visit]);
-
-  useEffect(() => () => stopSpeaking(), []);
-
-  const handleExplain = async () => {
-    if (!online) {
-      setExplanation(
-        `Here's a plain-language summary I can give without internet:\n\n${summaryNarration}\n\nConnect to the internet for a deeper AI explanation.`,
-      );
-      return;
-    }
-    setLoadingExplain(true);
-    setExplainError(null);
-    try {
-      const { reply } = await aiChat({
-        data: {
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are MedsBuddy, a compassionate patient advocate. The patient ALREADY KNOWS what they told the doctor (the 'patient summary' is for context only). Your job is to explain the VISIT OUTCOME — what the doctor said, decided, or changed during the appointment. DO NOT repeat or rephrase the patient summary. Focus only on: topics discussed, medication changes, new recommendations, tests ordered, follow-up appointments, and action items. Be warm and concise (4-7 short sentences) in plain language. End with: 'Would you like me to explain any part in more detail?'",
-            },
-            {
-              role: "user",
-              content: `Explain what happened during this visit. Focus on the outcome — do not repeat the patient summary.\n\n${transcriptText}`,
-            },
-          ],
-        },
-      });
-      setExplanation(reply);
-    } catch (e) {
-      setExplainError(e instanceof Error ? e.message : "Could not reach AI.");
-    } finally {
-      setLoadingExplain(false);
-    }
-  };
-
-  const handleListen = async () => {
-    if (speaking) { stopSpeaking(); setSpeaking(false); return; }
-    setSpeaking(true);
-    const text = explanation || `Here is a summary of your recent appointment. ${summaryNarration}`;
-    await speak(text, () => setSpeaking(false));
-  };
-
-  const handleAsk = async (q?: string) => {
-    const text = (q ?? askInput).trim();
-    if (!text) return;
-    setAskInput("");
-    if (!online) {
-      setQuestions((qs) => [...qs, { q: text, a: "I'm offline right now, but here's what I can see in the saved visit notes: " + summaryNarration }]);
-      return;
-    }
-    setAsking(true);
-    setQuestions((qs) => [...qs, { q: text, a: "" }]);
-    try {
-      const { reply } = await aiChat({
-        data: {
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are MedsBuddy, a patient advocate. Answer the patient's question using ONLY the visit notes provided. Use plain, kind language. If the answer isn't in the notes, say so honestly and suggest asking the doctor next visit. Keep answers to 1-3 short sentences.",
-            },
-            { role: "user", content: `Visit notes:\n${transcriptText}\n\nQuestion: ${text}` },
-          ],
-        },
-      });
-      setQuestions((qs) => qs.map((row, i) => (i === qs.length - 1 ? { ...row, a: reply } : row)));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Could not reach AI.";
-      setQuestions((qs) => qs.map((row, i) => (i === qs.length - 1 ? { ...row, a: `Sorry — ${msg}` } : row)));
-    } finally {
-      setAsking(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-foreground/50 backdrop-blur-sm grid place-items-end sm:place-items-center p-0 sm:p-4" onClick={onClose}>
-      <motion.div
-        initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-lg bg-card sm:rounded-3xl rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col"
-      >
-        <div className="p-5 border-b">
-          <div className="flex items-start gap-3">
-            <div className="size-11 rounded-2xl gradient-hero grid place-items-center text-primary-foreground shrink-0">
-              <Stethoscope className="size-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[11px] text-muted-foreground font-medium">Visit overview</div>
-              <h2 className="text-[17px] font-semibold leading-tight">
-                {visit.specialty ? `${visit.specialty} visit` : "Doctor visit"}
-              </h2>
-              <div className="text-[13px] text-muted-foreground mt-0.5">
-                {visit.doctor && visit.doctor !== "Unspecified doctor" ? visit.doctor + " · " : ""}
-                {new Date(visit.at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                {visit.durationSec ? ` · Duration ${formatDuration(visit.durationSec)}` : ""}
-              </div>
-            </div>
-            <button onClick={onClose} className="size-8 rounded-full bg-secondary grid place-items-center" aria-label="Close">
-              <X className="size-4" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 mt-4">
-            <ActionBtn icon={Sparkles} label={loadingExplain ? "Thinking…" : "Explain this visit"} onClick={handleExplain} primary disabled={loadingExplain} />
-            <ActionBtn icon={speaking ? Square : Volume2} label={speaking ? "Stop" : "Listen to summary"} onClick={handleListen} />
-            <ActionBtn icon={FileText} label={showTranscript ? "Hide notes" : "View notes"} onClick={() => setShowTranscript((s) => !s)} />
-            <ActionBtn
-              icon={PlayCircle}
-              label={visit.audioDataUrl ? (showPlayer ? "Hide recording" : "Play recording") : "No recording"}
-              onClick={() => visit.audioDataUrl && setShowPlayer((s) => !s)}
-              disabled={!visit.audioDataUrl}
-            />
-          </div>
-        </div>
-
-        <div className="overflow-y-auto p-5 space-y-4">
-          <VisitTimeline visit={visit} />
-
-          {(explanation || loadingExplain || explainError) && (
-            <Block icon={Sparkles} title="MedsBuddy explains">
-              {loadingExplain && <div className="text-sm text-muted-foreground">Reading the visit notes and putting it in plain language…</div>}
-              {explainError && <div className="text-sm text-destructive">Sorry — {explainError}</div>}
-              {explanation && <div className="text-[14px] whitespace-pre-wrap leading-relaxed">{explanation}</div>}
-            </Block>
-          )}
-
-          {showPlayer && visit.audioDataUrl && (
-            <Block icon={PlayCircle} title="Recording">
-              <audio controls src={visit.audioDataUrl} className="w-full" />
-            </Block>
-          )}
-
-          {showTranscript && (
-            <Block icon={FileText} title="Visit notes">
-              <pre className="text-[13px] whitespace-pre-wrap font-sans leading-relaxed">{transcriptText}</pre>
-            </Block>
-          )}
-
-          {topics.length > 0 && (
+      {active && (
+        <>
+          <div className="rounded-2xl bg-primary/10 border border-primary/25 p-4 mb-3 flex items-center gap-3">
+            <span className="relative grid place-items-center size-10 rounded-full bg-primary/20">
+              {visitCanListen && (
+                <span className="absolute inset-0 rounded-full bg-primary/30 animate-ping" />
+              )}
+              <Mic className="size-5 text-primary relative" />
+            </span>
             <div>
-              <div className="flex items-center gap-2 mb-2">
-                <ListChecks className="size-4 text-primary" />
-                <h3 className="text-[14px] font-semibold">Important topics</h3>
+              <div className="font-semibold text-primary">{wakeStatus}</div>
+              <div className="text-[12px] text-muted-foreground">
+                {!visitCanListen
+                  ? voiceSpeaking
+                    ? "MedsBuddy is speaking out loud."
+                    : doctorVisitConsent === "declined"
+                      ? "MedsBuddy is not participating because the doctor did not consent."
+                      : "MedsBuddy is waiting for the doctor's consent before listening."
+                  : voiceSpeaking
+                    ? "MedsBuddy is speaking out loud."
+                    : voiceSupported
+                      ? voiceListening
+                        ? "Microphone is listening. MedsBuddy will speak to the doctor for the patient when needed."
+                        : "Microphone is not active yet. Use the transcript box if permission is blocked."
+                      : "This browser does not support speech recognition. Use the transcript box below."}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {topics.map((t, i) => {
-                  const Icon = TOPIC_ICON[t.kind];
-                  const tone = TOPIC_TONE[t.kind];
-                  return (
-                    <div key={i} className={`rounded-xl border p-3 ${tone}`}>
-                      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide opacity-80">
-                        <Icon className="size-3.5" /> {t.label}
-                      </div>
-                      <div className="text-[13px] mt-1 text-foreground/90 whitespace-pre-wrap">{t.detail}</div>
-                    </div>
-                  );
-                })}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-background p-3 mb-3">
+            <div className="text-[12px] font-semibold text-primary mb-1">
+              AI Patient Advocate patient context
+            </div>
+            <p className="text-[13px] text-muted-foreground leading-relaxed">{patientSummary}</p>
+          </div>
+          <div className="space-y-2">
+            {messages.length === 0 ? (
+              <div className="rounded-xl border border-dashed bg-background p-4 text-sm text-muted-foreground">
+                Start speaking. MedsBuddy will label the speaker automatically.
               </div>
+            ) : (
+              messages.map((row, index) => (
+                <ConversationRow
+                  key={`${row.speaker}-${index}`}
+                  speaker={row.speaker}
+                  text={row.text}
+                />
+              ))
+            )}
+          </div>
+          {doctorVisitConsent === "pending" && (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button
+                onClick={onDoctorConsents}
+                className="rounded-2xl bg-primary text-primary-foreground py-4 px-4 text-sm font-semibold"
+              >
+                Doctor consents
+              </button>
+              <button
+                onClick={onDoctorDeclines}
+                className="rounded-2xl bg-secondary text-secondary-foreground py-4 px-4 text-sm font-semibold"
+              >
+                Doctor does not consent
+              </button>
             </div>
           )}
-
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <MessageSquareQuote className="size-4 text-primary" />
-              <h3 className="text-[14px] font-semibold">Ask about this visit</h3>
-            </div>
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {SUGGESTED_QS.map((q) => (
+          {visitCanListen && (
+            <div className="mt-4 rounded-2xl border bg-background p-3">
+              <label htmlFor="wake-transcript" className="text-[12px] font-semibold text-primary">
+                Simulate live transcript
+              </label>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  id="wake-transcript"
+                  value={simulatedTranscript}
+                  onChange={(e) => onSimulatedTranscriptChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") onSubmitTranscript();
+                  }}
+                  placeholder='Try: "Doctor, can you explain if this dizziness is from medication?"'
+                  className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-2 text-sm"
+                />
                 <button
-                  key={q}
-                  onClick={() => handleAsk(q)}
-                  disabled={asking}
-                  className="rounded-full bg-secondary text-secondary-foreground text-[12px] px-3 py-1.5 hover:bg-primary/10 hover:text-primary transition disabled:opacity-50"
+                  onClick={onSubmitTranscript}
+                  disabled={!simulatedTranscript.trim()}
+                  className="rounded-xl bg-secondary text-secondary-foreground px-4 py-2 text-sm font-semibold disabled:opacity-50"
                 >
-                  {q}
+                  Add to visit
                 </button>
-              ))}
-            </div>
-            {questions.length > 0 && (
-              <div className="space-y-2 mb-2">
-                {questions.map((row, i) => (
-                  <div key={i} className="rounded-xl border bg-background p-3">
-                    <div className="text-[12px] font-semibold text-primary">You</div>
-                    <div className="text-[13px] mb-2">{row.q}</div>
-                    <div className="text-[12px] font-semibold text-success">MedsBuddy</div>
-                    <div className="text-[13px] text-foreground/90 whitespace-pre-wrap">
-                      {row.a || (asking && i === questions.length - 1 ? "Thinking…" : "")}
-                    </div>
-                  </div>
-                ))}
               </div>
-            )}
-            <form
-              onSubmit={(e) => { e.preventDefault(); handleAsk(); }}
-              className="flex gap-2"
-            >
-              <input
-                value={askInput}
-                onChange={(e) => setAskInput(e.target.value)}
-                placeholder="Ask a question about this visit…"
-                className="flex-1 rounded-xl border bg-background px-3 py-2 text-sm"
-              />
-              <button
-                type="submit"
-                disabled={!askInput.trim() || asking}
-                className="rounded-xl bg-primary text-primary-foreground px-3 py-2 disabled:opacity-50"
-                aria-label="Send question"
-              >
-                <Send className="size-4" />
-              </button>
-            </form>
-            {!online && <div className="text-[11px] text-muted-foreground mt-2">Offline — I'll answer from your saved notes.</div>}
-          </div>
-
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                MedsBuddy listens for clinical context and speaks to the doctor on the patient's
+                behalf when an important clarification is missing.
+              </p>
+            </div>
+          )}
           <button
-            onClick={() => onRemove(visit.id)}
-            className="text-[12px] text-muted-foreground hover:text-destructive inline-flex items-center gap-1"
+            onClick={onEndVisit}
+            className="mt-4 w-full rounded-2xl bg-primary text-primary-foreground py-4 text-lg font-semibold inline-flex items-center justify-center gap-2"
           >
-            <Trash2 className="size-3" /> Remove this visit
+            <ClipboardList className="size-5" /> End Visit
+          </button>
+        </>
+      )}
+
+      {stage === "summary" && (
+        <div className="rounded-2xl bg-success/10 border border-success/30 p-4 flex items-start gap-3">
+          <div className="size-10 rounded-xl bg-success/20 text-success grid place-items-center shrink-0">
+            <Check className="size-5" />
+          </div>
+          <div>
+            <div className="font-semibold text-success">AI Patient Advocate visit completed</div>
+            <p className="text-[13px] text-muted-foreground mt-1">
+              The structured visit summary is ready below and saved to patient history.
+            </p>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function ConsentModal({
+  patientSummary,
+  patientConsent,
+  doctorConsent,
+  patientSummaryApproved,
+  onPatientConsentChange,
+  onDoctorConsentChange,
+  onPatientSummaryApprovedChange,
+  onBeginVisit,
+  onClose,
+}: {
+  patientSummary: string;
+  patientConsent: boolean;
+  doctorConsent: boolean;
+  patientSummaryApproved: boolean;
+  onPatientConsentChange: (value: boolean) => void;
+  onDoctorConsentChange: (value: boolean) => void;
+  onPatientSummaryApprovedChange: (value: boolean) => void;
+  onBeginVisit: () => void;
+  onClose: () => void;
+}) {
+  const ready = patientConsent && doctorConsent && patientSummaryApproved;
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-foreground/50 backdrop-blur-sm grid place-items-end sm:place-items-center p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: 40, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full sm:max-w-md bg-card sm:rounded-3xl rounded-t-3xl shadow-2xl p-5"
+      >
+        <div className="flex items-start gap-3">
+          <div className="size-11 rounded-2xl gradient-hero grid place-items-center text-primary-foreground shrink-0">
+            <ShieldCheck className="size-5" />
+          </div>
+          <div className="flex-1">
+            <div className="text-[12px] text-muted-foreground font-medium">Consent required</div>
+            <h2 className="text-[18px] font-semibold">Start AI Patient Advocate visit</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="size-8 rounded-full bg-secondary grid place-items-center"
+            aria-label="Close consent modal"
+          >
+            <X className="size-4" />
           </button>
         </div>
+
+        <div className="mt-5 rounded-2xl border bg-background p-4">
+          <div className="text-[12px] font-semibold text-primary mb-1">
+            Review patient summary before live visit
+          </div>
+          <p className="text-[13px] leading-relaxed text-muted-foreground">{patientSummary}</p>
+        </div>
+
+        <div className="space-y-3 mt-4">
+          <ConsentCheck
+            checked={patientSummaryApproved}
+            label="Patient approval: I reviewed this patient summary and approve MedsBuddy to use it during the live visit."
+            onChange={onPatientSummaryApprovedChange}
+          />
+          <ConsentCheck
+            checked={patientConsent}
+            label="Patient consent: MedsBuddy may listen and speak on my behalf."
+            onChange={onPatientConsentChange}
+          />
+          <ConsentCheck
+            checked={doctorConsent}
+            label="Doctor consent: MedsBuddy may participate in this visit."
+            onChange={onDoctorConsentChange}
+          />
+        </div>
+
+        <button
+          onClick={onBeginVisit}
+          disabled={!ready}
+          className="mt-5 w-full rounded-2xl bg-primary text-primary-foreground py-4 text-lg font-semibold disabled:opacity-50"
+        >
+          {ready ? "Begin Live Visit" : "Approve summary and consent to continue"}
+        </button>
       </motion.div>
     </div>
   );
 }
 
-const SUGGESTED_QS = [
-  "What medication changed?",
-  "What should I do next?",
-  "What follow-up is required?",
-  "Explain this in simple language.",
-];
-
-type TopicKind = "medication" | "diagnosis" | "symptom" | "test" | "follow-up" | "lifestyle";
-const TOPIC_ICON: Record<TopicKind, typeof Pill> = {
-  medication: Pill,
-  diagnosis: AlertCircle,
-  symptom: Activity,
-  test: FlaskConical,
-  "follow-up": ClipboardList,
-  lifestyle: Heart,
-};
-const TOPIC_TONE: Record<TopicKind, string> = {
-  medication: "bg-primary/5 border-primary/20 text-primary",
-  diagnosis: "bg-warning/10 border-warning/30 text-warning",
-  symptom: "bg-warning/10 border-warning/30 text-warning",
-  test: "bg-primary/5 border-primary/20 text-primary",
-  "follow-up": "bg-success/10 border-success/30 text-success",
-  lifestyle: "bg-success/10 border-success/30 text-success",
-};
-const TOPIC_LABEL: Record<TopicKind, string> = {
-  medication: "Medications",
-  diagnosis: "New diagnosis",
-  symptom: "Symptoms discussed",
-  test: "Tests ordered",
-  "follow-up": "Follow-up",
-  lifestyle: "Lifestyle",
-};
-
-function extractTopics(v: VisitRecord): { kind: TopicKind; label: string; detail: string }[] {
-  const topics: { kind: TopicKind; label: string; detail: string }[] = [];
-  const push = (kind: TopicKind, detail?: string) => {
-    if (detail && detail.trim()) topics.push({ kind, label: TOPIC_LABEL[kind], detail: detail.trim() });
-  };
-  push("medication", v.medicationChanges ?? v.medications);
-  push("follow-up", v.followUpAppointments ?? v.followUp);
-  push("lifestyle", v.newRecommendations ?? v.carePlan);
-  push("test", v.testsOrdered);
-  push("symptom", v.topicsDiscussed);
-  const haystack = [v.summary, v.notes, v.actionItems, v.questionsAnswered].filter(Boolean).join("\n");
-  if (!v.testsOrdered && /\b(lab|test|x-?ray|scan|blood work|ekg|mri|ct)\b/i.test(haystack)) {
-    push("test", findSentencesMatching(haystack, /lab|test|x-?ray|scan|blood work|ekg|mri|ct/i));
-  }
-  if (/\b(diagnos|condition|finding)\b/i.test(haystack)) {
-    push("diagnosis", findSentencesMatching(haystack, /diagnos|condition|finding/i));
-  }
-  return topics;
-}
-
-function findSentencesMatching(text: string, re: RegExp): string {
-  return (text.match(/[^.!?\n]+[.!?]?/g) ?? [])
-    .map((s) => s.trim())
-    .filter((s) => re.test(s))
-    .slice(0, 2)
-    .join(" ");
-}
-
-function buildTranscript(v: VisitRecord): string {
-  const parts = [
-    `Visit outcome summary: ${v.summary}`,
-    v.topicsDiscussed && `Topics discussed: ${v.topicsDiscussed}`,
-    v.medicationChanges && `Medication changes: ${v.medicationChanges}`,
-    v.newRecommendations && `New recommendations: ${v.newRecommendations}`,
-    v.testsOrdered && `Tests ordered: ${v.testsOrdered}`,
-    v.followUpAppointments && `Follow-up appointments: ${v.followUpAppointments}`,
-    v.actionItems && `Action items for the patient: ${v.actionItems}`,
-    v.medications && !v.medicationChanges && `Medications discussed: ${v.medications}`,
-    v.carePlan && !v.newRecommendations && `Care plan: ${v.carePlan}`,
-    v.followUp && !v.followUpAppointments && `Follow-up actions: ${v.followUp}`,
-    v.questionsAnswered && `Questions answered: ${v.questionsAnswered}`,
-    v.notes && `Appointment notes: ${v.notes}`,
-    v.patientSummary && `(For context only — patient summary brought to the visit: ${v.patientSummary})`,
-  ].filter(Boolean);
-  return parts.join("\n\n");
-}
-
-function buildSummaryNarration(v: VisitRecord): string {
-  const bits: string[] = [v.summary];
-  if (v.medicationChanges) bits.push(`Medication changes: ${v.medicationChanges}.`);
-  if (v.newRecommendations) bits.push(`New recommendations: ${v.newRecommendations}.`);
-  if (v.testsOrdered) bits.push(`Tests ordered: ${v.testsOrdered}.`);
-  if (v.followUpAppointments) bits.push(`Follow-up: ${v.followUpAppointments}.`);
-  if (v.actionItems) bits.push(`Your action items: ${v.actionItems}.`);
-  return bits.join(" ");
-}
-
-function ActionBtn({ icon: Icon, label, onClick, primary, disabled }: { icon: typeof Pill; label: string; onClick: () => void; primary?: boolean; disabled?: boolean }) {
+function ConsentCheck({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (value: boolean) => void;
+}) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`rounded-xl px-3 py-2.5 text-[13px] font-semibold inline-flex items-center justify-center gap-2 transition disabled:opacity-50 ${
-        primary ? "gradient-hero text-primary-foreground shadow-elegant" : "bg-secondary text-secondary-foreground hover:bg-secondary/70"
+    <label className="flex items-center gap-3 rounded-xl border bg-background p-4 text-[15px] font-semibold">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="size-5 accent-primary"
+      />
+      {label}
+    </label>
+  );
+}
+
+function ConversationRow({ speaker, text }: { speaker: string; text: string }) {
+  const isAdvocate = speaker === "MedsBuddy";
+  return (
+    <div
+      className={`rounded-xl border p-3 ${
+        isAdvocate ? "bg-primary/5 border-primary/20" : "bg-background"
       }`}
     >
-      <Icon className="size-4" /> {label}
-    </button>
+      <div
+        className={`text-[12px] font-semibold ${isAdvocate ? "text-primary" : "text-muted-foreground"}`}
+      >
+        {speaker}
+      </div>
+      <div className="text-[14px] leading-relaxed mt-1">{text}</div>
+    </div>
   );
 }
 
-function Block({ icon: Icon, title, children }: { icon: typeof Pill; title: string; children: React.ReactNode }) {
+function VisitSummary({
+  summary,
+  onSpeakSummary,
+  summarySpeaking,
+}: {
+  summary: VisitSummaryData;
+  onSpeakSummary: () => void;
+  summarySpeaking: boolean;
+}) {
   return (
-    <div className="rounded-2xl border bg-background p-3.5">
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className="size-4 text-primary" />
-        <h3 className="text-[13px] font-semibold">{title}</h3>
+    <Section icon={ClipboardList} title="Visit Summary" tint="success">
+      <div className="space-y-3">
+        <button
+          onClick={onSpeakSummary}
+          className="w-full rounded-2xl bg-primary text-primary-foreground px-4 py-3 text-sm font-semibold inline-flex items-center justify-center gap-2"
+        >
+          <Volume2 className="size-4" />
+          {summarySpeaking ? "Speaking visit summary..." : "Speak Brief Summary"}
+        </button>
+        <SummaryBlock title="Visit summary" body={summary.visitSummary} />
+        <SummaryBlock title="Diagnosis" body={summary.diagnosis} />
+        <SummaryBlock title="Medication changes" body={summary.medicationChanges} />
+        <SummaryBlock title="Follow-up instructions" body={summary.followUpInstructions} />
+        <SummaryBlock
+          title="Questions for next appointment"
+          body={summary.nextAppointmentQuestions}
+        />
+        <SummaryBlock title="Patient concerns" body={summary.patientConcerns} />
+        <SummaryBlock title="Doctor assessment" body={summary.doctorAssessment} />
+        <SummaryBlock
+          title="MedsBuddy questions asked on behalf of patient"
+          body={summary.medsBuddyQuestions}
+        />
+        <SummaryBlock title="Doctor answers" body={summary.doctorAnswers} />
+        <SummaryBlock title="Medication guidance" body={summary.medicationGuidance} />
+        <SummaryBlock title="Warning signs" body={summary.warningSigns} />
+        <SummaryBlock title="Follow-up plan" body={summary.followUpPlan} />
+        <SummaryBlock
+          title="Simple patient-friendly explanation"
+          body={summary.simpleExplanation}
+        />
+        <SummaryBlock title="Caregiver share summary" body={summary.caregiverSummary} />
       </div>
+    </Section>
+  );
+}
+
+function SummaryBlock({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-xl border bg-background p-3">
+      <div className="text-[12px] font-semibold text-primary mb-1">{title}</div>
+      <div className="text-[14px] leading-relaxed">{body}</div>
+    </div>
+  );
+}
+
+function MetricSection({
+  icon,
+  title,
+  value,
+  label,
+  children,
+}: {
+  icon: typeof Pill;
+  title: string;
+  value: string;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Section icon={icon} title={title} tint="primary">
+      <div className="text-3xl font-bold tracking-tight">{value}</div>
+      <div className="text-xs text-muted-foreground mb-3">{label}</div>
       {children}
-    </div>
+    </Section>
   );
 }
 
-function VisitTimeline({ visit }: { visit: VisitRecord }) {
-  const hasPatient = !!visit.patientSummary?.trim();
-  const hasRecording = visit.recorded || !!visit.audioDataUrl;
-  const hasOutcome =
-    !!(visit.topicsDiscussed || visit.medicationChanges || visit.newRecommendations ||
-       visit.testsOrdered || visit.followUpAppointments || visit.actionItems);
-  const hasFollowUp = !!(visit.actionItems || visit.followUpAppointments);
-  const steps: { label: string; sub: string; done: boolean; icon: typeof Pill }[] = [
-    { label: "Patient Summary", sub: hasPatient ? "Brought to the visit" : "Not saved", done: hasPatient, icon: FileText },
-    { label: "Visit Recording", sub: hasRecording ? (visit.durationSec ? `Recorded · ${formatDuration(visit.durationSec)}` : "Recorded") : "No recording", done: hasRecording, icon: Mic },
-    { label: "Visit Outcome Summary", sub: hasOutcome ? "What the doctor said" : "Not captured", done: hasOutcome, icon: Sparkles },
-    { label: "Follow-Up Tasks", sub: hasFollowUp ? "Action items saved" : "None", done: hasFollowUp, icon: ClipboardList },
-  ];
-  return (
-    <div className="rounded-2xl border bg-background p-3.5">
-      <div className="flex items-center gap-2 mb-3">
-        <ListChecks className="size-4 text-primary" />
-        <h3 className="text-[13px] font-semibold">Visit timeline</h3>
-      </div>
-      <ol className="relative">
-        {steps.map((s, i) => {
-          const Icon = s.icon;
-          return (
-            <li key={i} className="flex gap-3 pb-3 last:pb-0 relative">
-              {i < steps.length - 1 && (
-                <span className={`absolute left-3.5 top-7 bottom-0 w-px ${s.done ? "bg-primary/40" : "bg-border"}`} />
-              )}
-              <div className={`size-7 rounded-full grid place-items-center shrink-0 ${s.done ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}>
-                <Icon className="size-3.5" />
-              </div>
-              <div className="flex-1 min-w-0 pt-0.5">
-                <div className={`text-[13px] font-semibold ${s.done ? "text-foreground" : "text-muted-foreground"}`}>{s.label}</div>
-                <div className="text-[11px] text-muted-foreground">{s.sub}</div>
-              </div>
-              {s.done && <Check className="size-4 text-success shrink-0 mt-1" />}
-            </li>
-          );
-        })}
-      </ol>
-    </div>
-  );
-}
-
-function formatDuration(s: number): string {
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}:${String(r).padStart(2, "0")}`;
-}
-
-function ReviewBanner({ approved }: { approved: boolean }) {
-  if (approved) {
-    return (
-      <div className="rounded-2xl bg-success/10 border border-success/30 p-3 mb-3 flex items-start gap-3">
-        <div className="size-8 rounded-lg bg-success/20 text-success grid place-items-center shrink-0">
-          <ShieldCheck className="size-4" />
-        </div>
-        <div className="text-sm">
-          <div className="font-semibold text-success">Summary approved</div>
-          <div className="text-muted-foreground text-[13px]">MedsBuddy will only read the version you approved aloud.</div>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="rounded-2xl bg-warning/10 border border-warning/30 p-3 mb-3 flex items-start gap-3">
-      <div className="size-8 rounded-lg bg-warning/20 text-warning grid place-items-center shrink-0">
-        <AlertTriangle className="size-4" />
-      </div>
-      <div className="text-sm">
-        <div className="font-semibold text-warning">Please review your summary before sharing.</div>
-        <div className="text-muted-foreground text-[13px]">You are in control — MedsBuddy never speaks on your behalf without approval.</div>
-      </div>
-    </div>
-  );
-}
-
-function Section({ icon: Icon, title, tint, children }: { icon: typeof Pill; title: string; tint: "primary" | "success" | "warning"; children: React.ReactNode }) {
+function Section({
+  icon: Icon,
+  title,
+  tint,
+  children,
+}: {
+  icon: typeof Pill;
+  title: string;
+  tint: "primary" | "success" | "warning";
+  children: React.ReactNode;
+}) {
   const tintClass = {
     primary: "bg-primary/10 text-primary",
     success: "bg-success/15 text-success",
     warning: "bg-warning/15 text-warning",
   }[tint];
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl bg-card border shadow-card p-4 mb-3">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl bg-card border shadow-card p-4 mb-3"
+    >
       <div className="flex items-center gap-2 mb-3">
-        <div className={`size-8 rounded-lg grid place-items-center ${tintClass}`}><Icon className="size-4" /></div>
+        <div className={`size-8 rounded-lg grid place-items-center ${tintClass}`}>
+          <Icon className="size-4" />
+        </div>
         <h2 className="text-[15px] font-semibold">{title}</h2>
       </div>
       {children}
     </motion.div>
-  );
-}
-
-function EmptyState({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-2xl border-2 border-dashed border-border bg-card/50 p-6 text-center">
-      <div className="size-12 rounded-2xl bg-primary/10 text-primary grid place-items-center mx-auto mb-3"><Plus className="size-6" /></div>
-      <div className="font-semibold">{title}</div>
-      <p className="text-sm text-muted-foreground mt-1">{body}</p>
-      <div className="flex gap-2 justify-center mt-4">
-        <Link to="/reminders" className="rounded-full bg-primary text-primary-foreground px-4 py-2 text-sm font-medium">Add medication</Link>
-        <Link to="/profile" className="rounded-full bg-secondary text-secondary-foreground px-4 py-2 text-sm font-medium">Complete profile</Link>
-      </div>
-    </div>
   );
 }

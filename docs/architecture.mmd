@@ -1,0 +1,22 @@
+flowchart LR
+  patient[Patient]
+  doctor[Doctor]
+  frontend[MedsBuddy React Frontend]
+  backend[Alibaba Cloud Backend Service<br/>TanStack Start API Routes]
+  qwen[Qwen Cloud<br/>Alibaba Cloud Model Studio]
+  memory[(Visit Summaries<br/>Medication + Symptom Context)]
+
+  patient --> frontend
+  doctor --> frontend
+  frontend --> backend
+  backend --> qwen
+  backend --> memory
+  memory --> backend
+  qwen --> backend
+  backend --> frontend
+
+  frontend -. Listen .-> backend
+  backend -. Understand + Reason .-> qwen
+  backend -. Retrieve context .-> memory
+  frontend -. Advocate + Summarize .-> patient
+  frontend -. Advocate + Summarize .-> doctor

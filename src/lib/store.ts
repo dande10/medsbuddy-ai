@@ -82,13 +82,12 @@ export interface VisitRecord {
   at: number;
   doctor: string;
   specialty?: string;
-  durationSec?: number;
-  audioDataUrl?: string; // optional; omitted when too large
   summary: string;
   // Pre-visit context (the summary the patient brought to the doctor)
   patientSummary?: string;
   // Visit Outcome — what actually happened during the appointment
   topicsDiscussed?: string;
+  diagnosisOrConcerns?: string;
   medicationChanges?: string;
   newRecommendations?: string;
   testsOrdered?: string;
@@ -100,7 +99,6 @@ export interface VisitRecord {
   followUp?: string;
   questionsAnswered?: string;
   notes?: string;
-  recorded: boolean;
 }
 
 interface State {
@@ -170,8 +168,7 @@ export const useApp = create<State>()(
       simulateOffline: false,
       currentVisitSummary: null,
       setProfile: (p) => set({ profile: { ...get().profile, ...p } }),
-      addMed: (m) =>
-        set({ meds: [...get().meds, { ...m, id: id(), createdAt: Date.now() }] }),
+      addMed: (m) => set({ meds: [...get().meds, { ...m, id: id(), createdAt: Date.now() }] }),
       removeMed: (mid) =>
         set({
           meds: get().meds.filter((m) => m.id !== mid),
@@ -181,19 +178,19 @@ export const useApp = create<State>()(
         const med = get().meds.find((m) => m.id === medId);
         if (!med) return;
         set({
-          doses: [
-            { id: id(), medId, medName: med.name, status, at: Date.now() },
-            ...get().doses,
-          ],
+          doses: [{ id: id(), medId, medName: med.name, status, at: Date.now() }, ...get().doses],
         });
       },
-      addSymptom: (s) =>
-        set({ symptoms: [{ ...s, id: id(), at: Date.now() }, ...get().symptoms] }),
-      addAppointment: (a) =>
-        set({ appointments: [...get().appointments, { ...a, id: id() }] }),
+      addSymptom: (s) => set({ symptoms: [{ ...s, id: id(), at: Date.now() }, ...get().symptoms] }),
+      addAppointment: (a) => set({ appointments: [...get().appointments, { ...a, id: id() }] }),
       createThread: (title) => {
         const tid = id();
-        const t: ChatThread = { id: tid, title: title ?? "New chat", updatedAt: Date.now(), messages: [] };
+        const t: ChatThread = {
+          id: tid,
+          title: title ?? "New chat",
+          updatedAt: Date.now(),
+          messages: [],
+        };
         set({ threads: [t, ...get().threads], activeThreadId: tid });
         return tid;
       },
@@ -221,7 +218,8 @@ export const useApp = create<State>()(
         }),
       deleteThread: (tid) => {
         const threads = get().threads.filter((t) => t.id !== tid);
-        const active = get().activeThreadId === tid ? threads[0]?.id ?? null : get().activeThreadId;
+        const active =
+          get().activeThreadId === tid ? (threads[0]?.id ?? null) : get().activeThreadId;
         set({ threads, activeThreadId: active });
       },
       renameThread: (tid, title) =>
@@ -244,9 +242,7 @@ export const useApp = create<State>()(
       },
       toggleQuestion: (qid) =>
         set({
-          questions: get().questions.map((q) =>
-            q.id === qid ? { ...q, asked: !q.asked } : q,
-          ),
+          questions: get().questions.map((q) => (q.id === qid ? { ...q, asked: !q.asked } : q)),
         }),
       removeQuestion: (qid) => set({ questions: get().questions.filter((q) => q.id !== qid) }),
       addVisit: (v) => {

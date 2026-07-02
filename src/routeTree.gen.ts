@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TalkRouteImport } from './routes/talk'
+import { Route as SymptomsRouteImport } from './routes/symptoms'
 import { Route as RemindersRouteImport } from './routes/reminders'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as MemoryRouteImport } from './routes/memory'
@@ -20,13 +21,19 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as TalkIndexRouteImport } from './routes/talk.index'
 import { Route as DoctorIndexRouteImport } from './routes/doctor.index'
 import { Route as TalkThreadIdRouteImport } from './routes/talk.$threadId'
-import { Route as DoctorVisitModeRouteImport } from './routes/doctor.visit-mode'
-import { Route as DoctorRecordRouteImport } from './routes/doctor.record'
 import { Route as ApiTtsRouteImport } from './routes/api/tts'
+import { Route as ApiSttRouteImport } from './routes/api/stt'
+import { Route as ApiQwenProofRouteImport } from './routes/api/qwen-proof'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
 
 const TalkRoute = TalkRouteImport.update({
   id: '/talk',
   path: '/talk',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SymptomsRoute = SymptomsRouteImport.update({
+  id: '/symptoms',
+  path: '/symptoms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RemindersRoute = RemindersRouteImport.update({
@@ -79,19 +86,24 @@ const TalkThreadIdRoute = TalkThreadIdRouteImport.update({
   path: '/$threadId',
   getParentRoute: () => TalkRoute,
 } as any)
-const DoctorVisitModeRoute = DoctorVisitModeRouteImport.update({
-  id: '/visit-mode',
-  path: '/visit-mode',
-  getParentRoute: () => DoctorRoute,
-} as any)
-const DoctorRecordRoute = DoctorRecordRouteImport.update({
-  id: '/record',
-  path: '/record',
-  getParentRoute: () => DoctorRoute,
-} as any)
 const ApiTtsRoute = ApiTtsRouteImport.update({
   id: '/api/tts',
   path: '/api/tts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSttRoute = ApiSttRouteImport.update({
+  id: '/api/stt',
+  path: '/api/stt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiQwenProofRoute = ApiQwenProofRouteImport.update({
+  id: '/api/qwen-proof',
+  path: '/api/qwen-proof',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -103,10 +115,12 @@ export interface FileRoutesByFullPath {
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
+  '/symptoms': typeof SymptomsRoute
   '/talk': typeof TalkRouteWithChildren
+  '/api/health': typeof ApiHealthRoute
+  '/api/qwen-proof': typeof ApiQwenProofRoute
+  '/api/stt': typeof ApiSttRoute
   '/api/tts': typeof ApiTtsRoute
-  '/doctor/record': typeof DoctorRecordRoute
-  '/doctor/visit-mode': typeof DoctorVisitModeRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/doctor/': typeof DoctorIndexRoute
   '/talk/': typeof TalkIndexRoute
@@ -118,9 +132,11 @@ export interface FileRoutesByTo {
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
+  '/symptoms': typeof SymptomsRoute
+  '/api/health': typeof ApiHealthRoute
+  '/api/qwen-proof': typeof ApiQwenProofRoute
+  '/api/stt': typeof ApiSttRoute
   '/api/tts': typeof ApiTtsRoute
-  '/doctor/record': typeof DoctorRecordRoute
-  '/doctor/visit-mode': typeof DoctorVisitModeRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/doctor': typeof DoctorIndexRoute
   '/talk': typeof TalkIndexRoute
@@ -134,10 +150,12 @@ export interface FileRoutesById {
   '/memory': typeof MemoryRoute
   '/profile': typeof ProfileRoute
   '/reminders': typeof RemindersRoute
+  '/symptoms': typeof SymptomsRoute
   '/talk': typeof TalkRouteWithChildren
+  '/api/health': typeof ApiHealthRoute
+  '/api/qwen-proof': typeof ApiQwenProofRoute
+  '/api/stt': typeof ApiSttRoute
   '/api/tts': typeof ApiTtsRoute
-  '/doctor/record': typeof DoctorRecordRoute
-  '/doctor/visit-mode': typeof DoctorVisitModeRoute
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/doctor/': typeof DoctorIndexRoute
   '/talk/': typeof TalkIndexRoute
@@ -152,10 +170,12 @@ export interface FileRouteTypes {
     | '/memory'
     | '/profile'
     | '/reminders'
+    | '/symptoms'
     | '/talk'
+    | '/api/health'
+    | '/api/qwen-proof'
+    | '/api/stt'
     | '/api/tts'
-    | '/doctor/record'
-    | '/doctor/visit-mode'
     | '/talk/$threadId'
     | '/doctor/'
     | '/talk/'
@@ -167,9 +187,11 @@ export interface FileRouteTypes {
     | '/memory'
     | '/profile'
     | '/reminders'
+    | '/symptoms'
+    | '/api/health'
+    | '/api/qwen-proof'
+    | '/api/stt'
     | '/api/tts'
-    | '/doctor/record'
-    | '/doctor/visit-mode'
     | '/talk/$threadId'
     | '/doctor'
     | '/talk'
@@ -182,10 +204,12 @@ export interface FileRouteTypes {
     | '/memory'
     | '/profile'
     | '/reminders'
+    | '/symptoms'
     | '/talk'
+    | '/api/health'
+    | '/api/qwen-proof'
+    | '/api/stt'
     | '/api/tts'
-    | '/doctor/record'
-    | '/doctor/visit-mode'
     | '/talk/$threadId'
     | '/doctor/'
     | '/talk/'
@@ -199,7 +223,11 @@ export interface RootRouteChildren {
   MemoryRoute: typeof MemoryRoute
   ProfileRoute: typeof ProfileRoute
   RemindersRoute: typeof RemindersRoute
+  SymptomsRoute: typeof SymptomsRoute
   TalkRoute: typeof TalkRouteWithChildren
+  ApiHealthRoute: typeof ApiHealthRoute
+  ApiQwenProofRoute: typeof ApiQwenProofRoute
+  ApiSttRoute: typeof ApiSttRoute
   ApiTtsRoute: typeof ApiTtsRoute
 }
 
@@ -210,6 +238,13 @@ declare module '@tanstack/react-router' {
       path: '/talk'
       fullPath: '/talk'
       preLoaderRoute: typeof TalkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/symptoms': {
+      id: '/symptoms'
+      path: '/symptoms'
+      fullPath: '/symptoms'
+      preLoaderRoute: typeof SymptomsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reminders': {
@@ -282,20 +317,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TalkThreadIdRouteImport
       parentRoute: typeof TalkRoute
     }
-    '/doctor/visit-mode': {
-      id: '/doctor/visit-mode'
-      path: '/visit-mode'
-      fullPath: '/doctor/visit-mode'
-      preLoaderRoute: typeof DoctorVisitModeRouteImport
-      parentRoute: typeof DoctorRoute
-    }
-    '/doctor/record': {
-      id: '/doctor/record'
-      path: '/record'
-      fullPath: '/doctor/record'
-      preLoaderRoute: typeof DoctorRecordRouteImport
-      parentRoute: typeof DoctorRoute
-    }
     '/api/tts': {
       id: '/api/tts'
       path: '/api/tts'
@@ -303,18 +324,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTtsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/stt': {
+      id: '/api/stt'
+      path: '/api/stt'
+      fullPath: '/api/stt'
+      preLoaderRoute: typeof ApiSttRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/qwen-proof': {
+      id: '/api/qwen-proof'
+      path: '/api/qwen-proof'
+      fullPath: '/api/qwen-proof'
+      preLoaderRoute: typeof ApiQwenProofRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface DoctorRouteChildren {
-  DoctorRecordRoute: typeof DoctorRecordRoute
-  DoctorVisitModeRoute: typeof DoctorVisitModeRoute
   DoctorIndexRoute: typeof DoctorIndexRoute
 }
 
 const DoctorRouteChildren: DoctorRouteChildren = {
-  DoctorRecordRoute: DoctorRecordRoute,
-  DoctorVisitModeRoute: DoctorVisitModeRoute,
   DoctorIndexRoute: DoctorIndexRoute,
 }
 
@@ -341,9 +379,23 @@ const rootRouteChildren: RootRouteChildren = {
   MemoryRoute: MemoryRoute,
   ProfileRoute: ProfileRoute,
   RemindersRoute: RemindersRoute,
+  SymptomsRoute: SymptomsRoute,
   TalkRoute: TalkRouteWithChildren,
+  ApiHealthRoute: ApiHealthRoute,
+  ApiQwenProofRoute: ApiQwenProofRoute,
+  ApiSttRoute: ApiSttRoute,
   ApiTtsRoute: ApiTtsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

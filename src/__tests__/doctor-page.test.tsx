@@ -27,10 +27,7 @@ function buildRouter(initialPath: string) {
     path: "/",
     component: DoctorPage,
   });
-  const tree = rootRoute.addChildren([
-    indexRoute,
-    doctorRoute.addChildren([doctorIndex]),
-  ]);
+  const tree = rootRoute.addChildren([indexRoute, doctorRoute.addChildren([doctorIndex])]);
   return createRouter({
     routeTree: tree,
     history: createMemoryHistory({ initialEntries: [initialPath] }),
@@ -47,20 +44,28 @@ describe("Doctor page navigation", () => {
     const router = buildRouter("/doctor");
     render(<RouterProvider router={router} />);
     // wait for client mount gate
-    await act(async () => { await Promise.resolve(); });
-    expect(await screen.findByText(/Doctor visit prep/i)).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(
+      await screen.findByRole("heading", { name: /^AI Patient Advocate$/i }),
+    ).toBeInTheDocument();
   });
 
   it("renders the doctor page after navigating from another route", async () => {
     const router = buildRouter("/");
     render(<RouterProvider router={router} />);
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(screen.getByText(/Home Page/i)).toBeInTheDocument();
 
     await act(async () => {
       await router.navigate({ to: "/doctor" });
     });
 
-    expect(await screen.findByText(/Doctor visit prep/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: /^AI Patient Advocate$/i }),
+    ).toBeInTheDocument();
   });
 });

@@ -3,7 +3,20 @@ import { AppShell } from "@/components/app-shell";
 import { AiOrb } from "@/components/ai-orb";
 import { useApp, adherence } from "@/lib/store";
 import {
-  Pill, Stethoscope, Siren, Activity, Mic, FileText, QrCode, Plus, ChevronRight, ShieldCheck, AlertTriangle, CheckCircle2, CloudOff, Check,
+  Pill,
+  Stethoscope,
+  Siren,
+  Activity,
+  Mic,
+  FileText,
+  QrCode,
+  Plus,
+  ChevronRight,
+  ShieldCheck,
+  AlertTriangle,
+  CheckCircle2,
+  CloudOff,
+  Check,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
@@ -12,9 +25,16 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "MedsBuddy — Your AI Patient Advocate" },
-      { name: "description", content: "Voice-first AI healthcare companion for medications, symptoms, doctor visits, and emergencies." },
+      {
+        name: "description",
+        content:
+          "Voice-first AI healthcare companion for medications, symptoms, doctor visits, and emergencies.",
+      },
       { property: "og:title", content: "MedsBuddy — Your AI Patient Advocate" },
-      { property: "og:description", content: "Premium voice-first AI healthcare advocate that works offline." },
+      {
+        property: "og:description",
+        content: "Premium voice-first AI healthcare advocate that works offline.",
+      },
     ],
   }),
   component: Home,
@@ -29,7 +49,9 @@ function Home() {
   const dosesToday = doses.filter((d) => d.at >= last24);
   const sympToday = symptoms.filter((s) => s.at >= last24);
   const upcoming = appointments.filter((a) => a.at >= Date.now()).sort((a, b) => a.at - b.at)[0];
-  const profileReady = Boolean(profile.name && (meds.length || profile.allergies || profile.conditions));
+  const profileReady = Boolean(
+    profile.name && (meds.length || profile.allergies || profile.conditions),
+  );
 
   // Compute time-based greeting on the client only to avoid SSR hydration mismatch.
   const [greeting, setGreeting] = useState("Hello");
@@ -53,10 +75,13 @@ function Home() {
         <div className="relative flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="text-[13px] opacity-80 font-medium">
-              {greeting}{firstName ? `, ${firstName}` : ""}
+              {greeting}
+              {firstName ? `, ${firstName}` : ""}
             </div>
             <h2 className="text-[26px] font-bold leading-tight mt-1 tracking-tight">
-              Your AI Patient<br/>Advocate is here.
+              Your AI Patient
+              <br />
+              Advocate is here.
             </h2>
             <p className="text-sm opacity-85 mt-2 max-w-[20rem]">
               Ask anything about your health, meds, or visits — out loud or by typing.
@@ -85,7 +110,7 @@ function Home() {
         <QuickAction to="/talk" icon={Mic} label="Ask" />
         <QuickAction to="/doctor" icon={FileText} label="Speak" sub="For me" />
         <QuickAction to="/emergency" icon={QrCode} label="SOS" danger />
-        <QuickAction to="/memory" icon={Plus} label="Symptom" />
+        <QuickAction to="/symptoms" icon={Plus} label="Symptom" />
       </div>
 
       {/* OFFLINE READY CARD */}
@@ -101,24 +126,36 @@ function Home() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="font-semibold text-[15px] tracking-tight">Offline Ready</div>
-            <div className="text-[12px] text-muted-foreground">Works without internet — even in emergencies.</div>
+            <div className="text-[12px] text-muted-foreground">
+              Works without internet — even in emergencies.
+            </div>
           </div>
-          <span className="rounded-full bg-success/15 text-success text-[11px] font-semibold px-2.5 py-1">Available</span>
+          <span className="rounded-full bg-success/15 text-success text-[11px] font-semibold px-2.5 py-1">
+            Available
+          </span>
         </div>
         <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px]">
-          {["Doctor Summary", "Emergency QR", "Medications", "Symptoms", "Health Memory"].map((f) => (
-            <li key={f} className="inline-flex items-center gap-1.5 text-foreground/80">
-              <Check className="size-3.5 text-primary shrink-0" />
-              {f}
-            </li>
-          ))}
+          {["Doctor Summary", "Emergency QR", "Medications", "Symptoms", "Visit Summaries"].map(
+            (f) => (
+              <li key={f} className="inline-flex items-center gap-1.5 text-foreground/80">
+                <Check className="size-3.5 text-primary shrink-0" />
+                {f}
+              </li>
+            ),
+          )}
         </ul>
       </motion.div>
 
       {/* SNAPSHOT */}
       <div className="flex items-baseline justify-between mb-3">
         <h2>Today's snapshot</h2>
-        <span className="text-xs text-muted-foreground">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</span>
+        <span className="text-xs text-muted-foreground">
+          {new Date().toLocaleDateString(undefined, {
+            weekday: "long",
+            month: "short",
+            day: "numeric",
+          })}
+        </span>
       </div>
 
       <div className="grid grid-cols-2 gap-3 mb-5">
@@ -127,11 +164,15 @@ function Home() {
           icon={Pill}
           tint="primary"
           label="Medications"
-          value={meds.length === 0 ? "Set up" : `${dosesToday.filter(d => d.status === "taken").length}/${dosesToday.length || meds.length}`}
+          value={
+            meds.length === 0
+              ? "Set up"
+              : `${dosesToday.filter((d) => d.status === "taken").length}/${dosesToday.length || meds.length}`
+          }
           sub={meds.length === 0 ? "Add your first med" : "Doses today"}
         />
         <SnapshotCard
-          to="/memory"
+          to="/symptoms"
           icon={Activity}
           tint="warning"
           label="Symptoms"
@@ -143,7 +184,14 @@ function Home() {
           icon={Stethoscope}
           tint="success"
           label="Doctor visit"
-          value={upcoming ? new Date(upcoming.at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Ready"}
+          value={
+            upcoming
+              ? new Date(upcoming.at).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                })
+              : "Ready"
+          }
           sub={upcoming ? `with ${upcoming.doctor}` : "Generate summary"}
         />
         <SnapshotCard
@@ -157,10 +205,15 @@ function Home() {
       </div>
 
       {/* Adherence ribbon */}
-      <Link to="/reminders" className="block rounded-2xl border bg-card shadow-card p-4 mb-4 hover:bg-secondary/40 transition-colors">
+      <Link
+        to="/reminders"
+        className="block rounded-2xl border bg-card shadow-card p-4 mb-4 hover:bg-secondary/40 transition-colors"
+      >
         <div className="flex items-center justify-between mb-2">
           <div className="text-sm font-medium">7-day adherence</div>
-          <div className="text-xs text-muted-foreground">{doses.filter(d => d.at > Date.now() - 7*86400000).length} doses</div>
+          <div className="text-xs text-muted-foreground">
+            {doses.filter((d) => d.at > Date.now() - 7 * 86400000).length} doses
+          </div>
         </div>
         <div className="h-2.5 rounded-full bg-secondary overflow-hidden">
           <motion.div
@@ -169,11 +222,12 @@ function Home() {
             transition={{ duration: 0.8, ease: "easeOut" }}
             className="h-full rounded-full"
             style={{
-              background: adh >= 80
-                ? "linear-gradient(90deg, var(--success), var(--primary-glow))"
-                : adh >= 50
-                ? "linear-gradient(90deg, var(--warning), var(--primary-glow))"
-                : "linear-gradient(90deg, var(--destructive), var(--warning))",
+              background:
+                adh >= 80
+                  ? "linear-gradient(90deg, var(--success), var(--primary-glow))"
+                  : adh >= 50
+                    ? "linear-gradient(90deg, var(--warning), var(--primary-glow))"
+                    : "linear-gradient(90deg, var(--destructive), var(--warning))",
             }}
           />
         </div>
@@ -187,13 +241,18 @@ function Home() {
 
       {/* Onboarding nudge */}
       {!profileReady && (
-        <Link to="/profile" className="flex items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 p-4 mb-4">
+        <Link
+          to="/profile"
+          className="flex items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 p-4 mb-4"
+        >
           <div className="size-10 rounded-xl bg-primary/15 grid place-items-center text-primary">
             <ShieldCheck className="size-5" />
           </div>
           <div className="flex-1">
             <div className="font-semibold text-[15px]">Complete your health profile</div>
-            <div className="text-xs text-muted-foreground">Used for AI replies, doctor summary, and emergency QR.</div>
+            <div className="text-xs text-muted-foreground">
+              Used for AI replies, doctor summary, and emergency QR.
+            </div>
           </div>
           <ChevronRight className="size-5 text-primary" />
         </Link>
@@ -209,7 +268,9 @@ function Home() {
         </div>
         <div className="flex-1">
           <div className="font-semibold text-[15px]">Emergency QR</div>
-          <div className="text-xs text-muted-foreground">For paramedics & first responders — works offline</div>
+          <div className="text-xs text-muted-foreground">
+            For paramedics & first responders — works offline
+          </div>
         </div>
         <ChevronRight className="size-5 text-destructive" />
       </Link>
@@ -218,14 +279,26 @@ function Home() {
 }
 
 function QuickAction({
-  to, icon: Icon, label, sub, danger,
-}: { to: "/talk" | "/doctor" | "/emergency" | "/memory"; icon: typeof Mic; label: string; sub?: string; danger?: boolean }) {
+  to,
+  icon: Icon,
+  label,
+  sub,
+  danger,
+}: {
+  to: "/talk" | "/doctor" | "/emergency" | "/memory" | "/symptoms";
+  icon: typeof Mic;
+  label: string;
+  sub?: string;
+  danger?: boolean;
+}) {
   return (
     <Link
       to={to}
       className="group flex flex-col items-center justify-center rounded-2xl bg-card border shadow-card p-3 active:scale-95 transition-transform"
     >
-      <div className={`size-10 rounded-xl grid place-items-center mb-1.5 ${danger ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"} group-hover:scale-110 transition-transform`}>
+      <div
+        className={`size-10 rounded-xl grid place-items-center mb-1.5 ${danger ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"} group-hover:scale-110 transition-transform`}
+      >
         <Icon className="size-5" />
       </div>
       <div className="text-[12px] font-semibold leading-tight">{label}</div>
@@ -235,9 +308,14 @@ function QuickAction({
 }
 
 function SnapshotCard({
-  to, icon: Icon, label, value, sub, tint,
+  to,
+  icon: Icon,
+  label,
+  value,
+  sub,
+  tint,
 }: {
-  to: "/reminders" | "/memory" | "/doctor" | "/emergency";
+  to: "/reminders" | "/memory" | "/symptoms" | "/doctor" | "/emergency";
   icon: typeof Pill;
   label: string;
   value: string;
@@ -248,10 +326,13 @@ function SnapshotCard({
     primary: "bg-primary/10 text-primary",
     success: "bg-success/15 text-success",
     warning: "bg-warning/15 text-warning",
-    danger:  "bg-destructive/10 text-destructive",
+    danger: "bg-destructive/10 text-destructive",
   }[tint];
   return (
-    <Link to={to} className="rounded-2xl bg-card border shadow-card p-4 active:scale-[0.98] transition-transform">
+    <Link
+      to={to}
+      className="rounded-2xl bg-card border shadow-card p-4 active:scale-[0.98] transition-transform"
+    >
       <div className={`size-9 rounded-xl grid place-items-center ${tintClass}`}>
         <Icon className="size-[18px]" />
       </div>

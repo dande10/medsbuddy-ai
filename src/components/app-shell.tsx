@@ -1,10 +1,28 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { Home, MessageCircle, Pill, Stethoscope, Clock, Siren, User, CloudOff, Cloud, Wifi } from "lucide-react";
+import {
+  Home,
+  MessageCircle,
+  Pill,
+  Stethoscope,
+  Clock,
+  Siren,
+  User,
+  CloudOff,
+  Cloud,
+  Wifi,
+} from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { stopSpeaking } from "@/lib/voice";
 import { useConnectivity } from "@/lib/connectivity";
 import { useApp } from "@/lib/store";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 const navItems = [
@@ -12,11 +30,19 @@ const navItems = [
   { to: "/talk", icon: MessageCircle, label: "Talk" },
   { to: "/reminders", icon: Pill, label: "Meds" },
   { to: "/doctor", icon: Stethoscope, label: "Doctor" },
-  { to: "/memory", icon: Clock, label: "Memory" },
+  { to: "/memory", icon: Clock, label: "Visits" },
   { to: "/emergency", icon: Siren, label: "SOS" },
 ] as const;
 
-export function AppShell({ children, title, transparentHeader }: { children: ReactNode; title?: string; transparentHeader?: boolean }) {
+export function AppShell({
+  children,
+  title,
+  transparentHeader,
+}: {
+  children: ReactNode;
+  title?: string;
+  transparentHeader?: boolean;
+}) {
   const location = useLocation();
   const { online, offline, simulated, hydrated } = useConnectivity();
   const setSimulateOffline = useApp((s) => s.setSimulateOffline);
@@ -35,10 +61,14 @@ export function AppShell({ children, title, transparentHeader }: { children: Rea
     }
   };
 
-  useEffect(() => { stopSpeaking(); }, [location.pathname]);
+  useEffect(() => {
+    stopSpeaking();
+  }, [location.pathname]);
 
   useEffect(() => {
-    const onVis = () => { if (document.hidden) stopSpeaking(); };
+    const onVis = () => {
+      if (document.hidden) stopSpeaking();
+    };
     const onUnload = () => stopSpeaking();
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("beforeunload", onUnload);
@@ -52,12 +82,16 @@ export function AppShell({ children, title, transparentHeader }: { children: Rea
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className={`sticky top-0 z-30 ${transparentHeader ? "bg-transparent" : "bg-background/80 backdrop-blur-xl border-b border-border/60"}`}>
+      <header
+        className={`sticky top-0 z-30 ${transparentHeader ? "bg-transparent" : "bg-background/80 backdrop-blur-xl border-b border-border/60"}`}
+      >
         <div className="mx-auto max-w-2xl px-5 py-3.5 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5">
             <div className="relative size-10 rounded-2xl overflow-hidden grid place-items-center shadow-elegant">
               <div className="absolute inset-0 gradient-hero" />
-              <div className="relative font-bold text-primary-foreground text-lg tracking-tight">M</div>
+              <div className="relative font-bold text-primary-foreground text-lg tracking-tight">
+                M
+              </div>
             </div>
             <div className="leading-tight">
               <div className="font-semibold text-[15px]">MedsBuddy</div>
@@ -65,8 +99,17 @@ export function AppShell({ children, title, transparentHeader }: { children: Rea
             </div>
           </Link>
           <div className="flex items-center gap-2">
-            <StatusIndicator online={online} simulated={simulated} hydrated={hydrated} onClick={toggleOfflineDemo} />
-            <Link to="/profile" className="size-10 rounded-full bg-card border grid place-items-center hover:bg-secondary transition-colors" aria-label="Profile">
+            <StatusIndicator
+              online={online}
+              simulated={simulated}
+              hydrated={hydrated}
+              onClick={toggleOfflineDemo}
+            />
+            <Link
+              to="/profile"
+              className="size-10 rounded-full bg-card border grid place-items-center hover:bg-secondary transition-colors"
+              aria-label="Profile"
+            >
               <User className="size-5 text-primary" />
             </Link>
           </div>
@@ -76,7 +119,10 @@ export function AppShell({ children, title, transparentHeader }: { children: Rea
             <CloudOff className="size-4" />
             <span>
               <strong className="font-semibold">Offline Mode Active</strong>
-              <span className="text-foreground/70 font-normal"> — Your health information remains available{simulated ? " (demo)" : ""}.</span>
+              <span className="text-foreground/70 font-normal">
+                {" "}
+                — Your health information remains available{simulated ? " (demo)" : ""}.
+              </span>
             </span>
           </div>
         )}
@@ -87,15 +133,17 @@ export function AppShell({ children, title, transparentHeader }: { children: Rea
         )}
       </header>
 
-      <main className="flex-1 mx-auto max-w-2xl w-full px-5 py-5 pb-28">
-        {children}
-      </main>
+      <main className="flex-1 mx-auto max-w-2xl w-full px-5 py-5 pb-28">{children}</main>
 
-      <nav className="fixed bottom-0 inset-x-0 z-40 bg-background/85 backdrop-blur-xl border-t border-border/60" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <nav
+        className="fixed bottom-0 inset-x-0 z-40 bg-background/85 backdrop-blur-xl border-t border-border/60"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
         <div className="mx-auto max-w-2xl grid grid-cols-6">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active = item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to);
+            const active =
+              item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to);
             const isSos = item.to === "/emergency";
             return (
               <Link
@@ -108,15 +156,25 @@ export function AppShell({ children, title, transparentHeader }: { children: Rea
                 )}
                 <Icon
                   className={`size-[22px] transition-colors ${
-                    isSos && active ? "text-destructive" :
-                    active ? "text-primary" : "text-muted-foreground"
+                    isSos && active
+                      ? "text-destructive"
+                      : active
+                        ? "text-primary"
+                        : "text-muted-foreground"
                   }`}
                   strokeWidth={active ? 2.4 : 2}
                 />
-                <span className={`${
-                  isSos && active ? "text-destructive" :
-                  active ? "text-primary" : "text-muted-foreground"
-                }`}>{item.label}</span>
+                <span
+                  className={`${
+                    isSos && active
+                      ? "text-destructive"
+                      : active
+                        ? "text-primary"
+                        : "text-muted-foreground"
+                  }`}
+                >
+                  {item.label}
+                </span>
               </Link>
             );
           })}
@@ -128,18 +186,34 @@ export function AppShell({ children, title, transparentHeader }: { children: Rea
   );
 }
 
-function StatusIndicator({ online, simulated, hydrated, onClick }: { online: boolean; simulated: boolean; hydrated: boolean; onClick: () => void }) {
+function StatusIndicator({
+  online,
+  simulated,
+  hydrated,
+  onClick,
+}: {
+  online: boolean;
+  simulated: boolean;
+  hydrated: boolean;
+  onClick: () => void;
+}) {
   // Connecting (gray) until we know
   const state = !hydrated ? "connecting" : online ? "online" : "offline";
   const label =
-    state === "online" ? "Online" :
-    state === "offline" ? (simulated ? "Offline (demo)" : "Offline Ready") :
-    "Connecting";
+    state === "online"
+      ? "Online"
+      : state === "offline"
+        ? simulated
+          ? "Offline (demo)"
+          : "Offline Ready"
+        : "Connecting";
   const Icon = state === "online" ? Cloud : state === "offline" ? CloudOff : Wifi;
   const tone =
-    state === "online" ? "bg-success/10 text-success border-success/30" :
-    state === "offline" ? "bg-primary/10 text-primary border-primary/30" :
-    "bg-secondary text-muted-foreground border-border";
+    state === "online"
+      ? "bg-success/10 text-success border-success/30"
+      : state === "offline"
+        ? "bg-primary/10 text-primary border-primary/30"
+        : "bg-secondary text-muted-foreground border-border";
   return (
     <button
       type="button"
@@ -154,14 +228,19 @@ function StatusIndicator({ online, simulated, hydrated, onClick }: { online: boo
   );
 }
 
-function OfflineInfoDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+function OfflineInfoDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
   const available = [
     "Emergency QR Code",
-    "Doctor Summary",
+    "Doctor visit summaries",
     "Speak For Me",
     "Medication list",
     "Symptoms and health notes",
-    "Health Memory timeline",
   ];
   const unavailable = [
     "AI medical chat",
