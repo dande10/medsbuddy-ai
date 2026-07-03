@@ -15,6 +15,28 @@ Primary implementation files:
 - `src/components/doctor-page.tsx` sends doctor visit transcript, patient context, medication context, and visit summaries for AI advocate reasoning.
 - `src/routes/api/qwen-proof.ts` exposes a judge-friendly proof endpoint.
 - `src/routes/api/health.ts` exposes a backend health endpoint showing Qwen configuration.
+- `backend/main.py` provides the Alibaba Cloud ECS FastAPI backend with Qwen reasoning, ElevenLabs STT/TTS, and SQLite visit memory.
+- `backend/deploy.sh` deploys the FastAPI backend with Uvicorn, Nginx, and systemd on Alibaba Cloud ECS.
+
+Alibaba Cloud ECS deployment guide:
+
+- `docs/ALIBABA_ECS_FASTAPI_DEPLOYMENT.md`
+
+Alibaba ECS MedsBuddy API surface:
+
+- `POST /api/medsbuddy/analyze-transcript` sends the live visit transcript to Qwen Cloud for speaker, intent, and response decisions.
+- `POST /api/medsbuddy/generate-summary` sends the full visit transcript to Qwen Cloud for structured documentation.
+- `POST /api/medsbuddy/save-memory` stores patient-approved doctor visit memory in the ECS database.
+- `GET /api/medsbuddy/memory/{patientId}` retrieves previous approved visit memories.
+- `POST /api/medsbuddy/ask-memory` retrieves visit memory and asks Qwen Cloud to answer doctor questions.
+- `POST /api/medsbuddy/clarification-check` asks Qwen Cloud whether MedsBuddy should ask the doctor a clarification.
+- `POST /api/medsbuddy/chat` powers the general MedsBuddy Talk page through Alibaba ECS and Qwen Cloud.
+
+Architecture proof:
+
+```txt
+MedsBuddy App -> Alibaba ECS Backend APIs -> Qwen Cloud -> Visit Memory DB -> Response
+```
 
 Environment variables:
 

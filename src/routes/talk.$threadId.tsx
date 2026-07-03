@@ -7,7 +7,7 @@ import {
   isHighConfidenceNavigation,
   logNavigationIntent,
 } from "@/lib/nav-commands";
-import { aiChat } from "@/lib/ai-chat.functions";
+import { chatWithMedsBuddy } from "@/lib/alibaba-api";
 import { speak, stopSpeaking } from "@/lib/voice";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Trash2, Send, Sparkles, History, Plus, X, MessageCircle } from "lucide-react";
@@ -74,9 +74,6 @@ function buildSystemPrompt(state: ReturnType<typeof useApp.getState>): string {
   ].join("\n");
 }
 
-function looksMedical(text: string): boolean {
-  return /side effect|interaction|recall|safe to take|what is|how does|symptom of/i.test(text);
-}
 function looksLikeSymptom(text: string): { name: string; severity: number } | null {
   const m = text.match(/\b(?:i (?:feel|have|am)|my .+ (?:hurts|aches))\b[^.]*/i);
   if (!m) return null;
@@ -146,6 +143,25 @@ function buildOfflineReply(text: string, state: ReturnType<typeof useApp.getStat
   }
 
   return "I'm offline, but I can still talk. I can help with saved medications, symptoms, SOS QR, and doctor visit summaries on this device.";
+}
+
+function buildFastLocalReply(text: string): string | null {
+  const normalized = text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, "")
+    .trim();
+  if (
+    /^(hi|hello|hey|how are you|how are you today|good morning|good afternoon)$/.test(normalized)
+  ) {
+    return "I'm here and ready to help. I can support medication questions, symptoms, doctor visits, and visit summaries.";
+  }
+  if (/\b(who are you|what are you|what can you do|help me)\b/.test(normalized)) {
+    return "I'm MedsBuddy, your AI Patient Advocate. I help remember health details, prepare for doctor visits, and summarize care instructions.";
+  }
+  if (/\b(thank you|thanks)\b/.test(normalized)) {
+    return "You're welcome. I'm here whenever you need help with medications, symptoms, or doctor visit notes.";
+  }
+  return null;
 }
 
 function TalkThreadPage() {
@@ -248,6 +264,18 @@ function TalkThreadPage() {
     const symp = looksLikeSymptom(text);
     if (symp) addSymptom({ name: symp.name, severity: symp.severity, notes: text });
 
+    const fastReply = buildFastLocalReply(text);
+    if (fastReply) {
+      appendToThread(thread.id, { role: "user", content: text });
+      appendToThread(thread.id, { role: "assistant", content: fastReply });
+      setSpeaking(true);
+      await speak(fastReply, () => {
+        setSpeaking(false);
+        setAutoListen(true);
+      });
+      return;
+    }
+
     if (offline) {
       const offlineReply = buildOfflineReply(text, useApp.getState());
       appendToThread(thread.id, { role: "user", content: text });
@@ -273,19 +301,12 @@ function TalkThreadPage() {
         role: m.role,
         content: m.role === "assistant" ? humanizeAssistantReply(m.content) : m.content,
       }));
-      const useSearch =
-        looksMedical(text) && (typeof navigator === "undefined" || navigator.onLine);
-
-      const { reply } = await aiChat({
-        data: {
-          messages: [
-            { role: "system" as const, content: sys },
-            ...history,
-            { role: "user" as const, content: text },
-          ],
-          useWebSearch: useSearch,
-          searchQuery: useSearch ? text : undefined,
-        },
+      const { reply } = await chatWithMedsBuddy({
+        messages: [
+          { role: "system" as const, content: sys },
+          ...history,
+          { role: "user" as const, content: text },
+        ],
       });
       const finalReply = humanizeAssistantReply(reply);
       appendToThread(thread.id, { role: "assistant", content: finalReply });

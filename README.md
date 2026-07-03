@@ -51,6 +51,43 @@ Important proof files:
 - `src/routes/api/qwen-proof.ts` - backend proof endpoint for judges.
 - `docs/HACKATHON_QWEN_CLOUD_PROOF.md` - copy-pasteable proof call and request shape.
 
+## Alibaba ECS Backend Proof for Devpost
+
+For the Qwen Cloud Hackathon, MedsBuddy includes a deployable Alibaba Cloud ECS backend in `backend/`.
+The backend runs FastAPI behind Nginx and systemd, stores patient-approved visit memory in SQLite, and sends all live visit reasoning requests to Qwen Cloud from the server.
+
+Architecture:
+
+```txt
+MedsBuddy App -> Alibaba ECS Backend APIs -> Qwen Cloud -> Visit Memory DB -> Response
+```
+
+MedsBuddy ECS endpoints:
+
+- `POST /api/medsbuddy/analyze-transcript` - Qwen detects speaker, intent, and whether MedsBuddy should respond.
+- `POST /api/medsbuddy/generate-summary` - Qwen creates the structured visit summary.
+- `POST /api/medsbuddy/save-memory` - saves patient-approved doctor visit memory.
+- `GET /api/medsbuddy/memory/{patientId}` - retrieves approved previous visit memories.
+- `POST /api/medsbuddy/ask-memory` - retrieves memory and asks Qwen to answer doctor questions.
+- `POST /api/medsbuddy/clarification-check` - Qwen decides whether MedsBuddy should ask a clarification.
+- `POST /api/medsbuddy/chat` - general MedsBuddy chat reasoning for the Talk page.
+
+Backend logs include:
+
+- `Alibaba ECS API called`
+- `Calling Qwen Cloud`
+- `Visit memory saved`
+- `Visit memory retrieved`
+
+ElevenLabs voice support is available through backend endpoints:
+
+- `POST /api/stt`
+- `POST /api/tts`
+
+Deployment guide and curl proof commands:
+
+- `docs/ALIBABA_ECS_FASTAPI_DEPLOYMENT.md`
+
 ## Environment Variables
 
 Copy `.env.example` to `.env.local` for local development:
@@ -69,16 +106,17 @@ DASHSCOPE_API_KEY=your_dashscope_key
 
 Supported variables:
 
-| Variable             | Required         | Description                                                                                                                                             |
-| -------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `QWEN_API_KEY`       | Yes              | Qwen Cloud API key. `DASHSCOPE_API_KEY` also works.                                                                                                     |
-| `DASHSCOPE_API_KEY`  | Yes, alternative | DashScope API key alias.                                                                                                                                |
-| `QWEN_MODEL`         | No               | Defaults to `qwen-plus`.                                                                                                                                |
-| `QWEN_API_BASE_URL`  | No               | Defaults to `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`. Change this if your Alibaba Cloud account uses another DashScope region endpoint. |
-| `TAVILY_API_KEY`     | No               | Enables optional web search context for medical questions.                                                                                              |
-| `ELEVENLABS_API_KEY` | No               | Enables optional speech-to-text and text-to-speech for Doctor Visit voice.                                                                              |
-| `DATABASE_PROVIDER`  | No               | Defaults to `local-browser-store`; use this to document a future Alibaba Cloud database target.                                                         |
-| `DATABASE_URL`       | No               | Optional database connection string for a future ApsaraDB-backed persistence layer.                                                                     |
+| Variable                      | Required         | Description                                                                                                                                             |
+| ----------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `QWEN_API_KEY`                | Yes              | Qwen Cloud API key. `DASHSCOPE_API_KEY` also works.                                                                                                     |
+| `DASHSCOPE_API_KEY`           | Yes, alternative | DashScope API key alias.                                                                                                                                |
+| `QWEN_MODEL`                  | No               | Defaults to `qwen-plus`.                                                                                                                                |
+| `QWEN_CHAT_MODEL`             | No               | Fast model for the Talk page. Defaults to `qwen-plus`; keep `QWEN_MODEL` for deeper doctor-visit reasoning.                                             |
+| `QWEN_API_BASE_URL`           | No               | Defaults to `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`. Change this if your Alibaba Cloud account uses another DashScope region endpoint. |
+| `VITE_MEDSBUDDY_API_BASE_URL` | No               | Frontend/mobile backend URL. Set to your Alibaba ECS URL so app API calls use Alibaba Cloud, for example `http://YOUR_ECS_IP`.                          |
+| `ELEVENLABS_API_KEY`          | No               | Enables optional speech-to-text and text-to-speech for Doctor Visit voice.                                                                              |
+| `DATABASE_PROVIDER`           | No               | Use `sqlite` for the FastAPI backend demo database.                                                                                                     |
+| `DATABASE_URL`                | No               | SQLite URL for visit memory, for example `sqlite:///./medsbuddy.db`.                                                                                    |
 
 ## Run Locally
 

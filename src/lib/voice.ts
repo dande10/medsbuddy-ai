@@ -1,4 +1,5 @@
 // Browser speech utilities (client-only)
+import { medsBuddyApiUrl } from "@/lib/alibaba-api";
 
 let currentAudio: HTMLAudioElement | null = null;
 let currentUrl: string | null = null;
@@ -30,7 +31,7 @@ export async function speak(text: string, onEnd?: () => void): Promise<void> {
   // Try ElevenLabs first (requires network)
   if (typeof navigator !== "undefined" && navigator.onLine) {
     try {
-      const res = await fetch("/api/tts", {
+      const res = await fetch(medsBuddyApiUrl("/api/tts"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),

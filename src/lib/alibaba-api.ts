@@ -1,0 +1,115 @@
+type JsonRecord = Record<string, unknown>;
+
+const DEFAULT_API_BASE_URL = "";
+
+export function getMedsBuddyApiBaseUrl(): string {
+  const configured =
+    (import.meta.env.VITE_MEDSBUDDY_API_BASE_URL as string | undefined)?.trim() ||
+    DEFAULT_API_BASE_URL;
+  return configured.replace(/\/$/, "");
+}
+
+export function medsBuddyApiUrl(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${getMedsBuddyApiBaseUrl()}${normalizedPath}`;
+}
+
+async function postJson<T>(path: string, body: JsonRecord): Promise<T> {
+  const url = medsBuddyApiUrl(path);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const error = await response.text().catch(() => "");
+    if (/^\s*<!doctype html/i.test(error) || /<html/i.test(error)) {
+      throw new Error(
+        `MedsBuddy backend endpoint was not found at ${url}. Check VITE_MEDSBUDDY_API_BASE_URL and restart the app.`,
+      );
+    }
+    throw new Error(error || `MedsBuddy API failed: ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+export type MedsBuddyApiResult<T> = {
+  patientId?: string;
+  qwen?: string;
+  result?: T;
+  summary?: T;
+};
+
+export type AnalyzeTranscriptResult = {
+  speaker?: "doctor" | "patient" | "medsbuddy" | "unknown";
+  intent?: string;
+  confidence?: number;
+  shouldRespond?: boolean;
+  response?: string;
+  memoryUsed?: boolean;
+};
+
+export type StructuredVisitSummary = {
+  visitSummary?: string;
+  diagnosis?: string;
+  medications?: string;
+  medicationChanges?: string;
+  allergies?: string;
+  followUp?: string;
+  followUpInstructions?: string;
+  warningSigns?: string;
+  patientFriendlyExplanation?: string;
+  simpleExplanation?: string;
+  caregiverShareSummary?: string;
+  caregiverSummary?: string;
+};
+
+export function analyzeTranscript(payload: {
+  patientId: string;
+  transcript: string;
+  patientContext?: string;
+  medicationHistory?: string;
+}) {
+  return postJson<MedsBuddyApiResult<AnalyzeTranscriptResult>>(
+    "/api/medsbuddy/analyze-transcript",
+    payload,
+  );
+}
+
+export function generateVisitSummary(payload: {
+  patientId: string;
+  transcript: string;
+  patientContext?: string;
+  medicationHistory?: string;
+}) {
+  return postJson<MedsBuddyApiResult<StructuredVisitSummary>>(
+    "/api/medsbuddy/generate-summary",
+    payload,
+  );
+}
+
+export function humanizePreVisitSummary(payload: { patientId: string; rawPatientContext: string }) {
+  return postJson<{ patientId: string; qwen?: string; summary: string }>(
+    "/api/medsbuddy/humanize-previsit-summary",
+    payload,
+  );
+}
+
+export function saveVisitMemory(payload: {
+  patientId: string;
+  visitSummary: string;
+  diagnosis?: string;
+  medications?: string;
+  allergies?: string;
+  followUp?: string;
+  warningSigns?: string;
+  approvedByPatient?: boolean;
+}) {
+  return postJson<{ saved: boolean; memory: JsonRecord }>("/api/medsbuddy/save-memory", payload);
+}
+
+export function chatWithMedsBuddy(payload: {
+  messages: { role: "system" | "user" | "assistant"; content: string }[];
+}) {
+  return postJson<{ reply: string; qwen?: string }>("/api/medsbuddy/chat", payload);
+}
