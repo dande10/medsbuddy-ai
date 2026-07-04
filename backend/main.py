@@ -100,6 +100,16 @@ class HumanizePreVisitSummaryRequest(BaseModel):
     rawPatientContext: str = Field(..., min_length=1)
 
 
+class PatientContextMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ExtractPatientContextRequest(BaseModel):
+    patientId: str = Field(..., min_length=1)
+    conversation: list[PatientContextMessage] = Field(..., min_length=1)
+
+
 class AskMemoryRequest(BaseModel):
     patientId: str = Field(..., min_length=1)
     question: str = Field(..., min_length=1)
@@ -118,6 +128,13 @@ class ClarificationCheckRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[dict[str, str]] = Field(..., min_length=1)
+
+
+class AgentRouterRequest(BaseModel):
+    patientId: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1)
+    conversation: list[dict[str, str]] = Field(default_factory=list)
+    currentState: dict[str, Any] = Field(default_factory=dict)
 
 
 class TtsRequest(BaseModel):
@@ -227,6 +244,34 @@ def parse_qwen_json(reply: str, fallback_intent: str = "qwen_response") -> dict[
         "intent": fallback_intent,
         "response": reply,
         "memoryUsed": True,
+    }
+
+
+def normalize_patient_context(value: dict[str, Any]) -> dict[str, Any]:
+    def string_list(key: str) -> list[str]:
+        raw = value.get(key, [])
+        if not isinstance(raw, list):
+            return []
+        seen: set[str] = set()
+        output: list[str] = []
+        for item in raw:
+            text = str(item).strip()
+            key_text = text.lower()
+            if not text or key_text in seen:
+                continue
+            seen.add(key_text)
+            output.append(text)
+        return output
+
+    return {
+        "visitReason": str(value.get("visitReason", "") or "").strip(),
+        "symptoms": string_list("symptoms"),
+        "medications": string_list("medications"),
+        "onset": str(value.get("onset", "") or "").strip(),
+        "duration": str(value.get("duration", "") or "").strip(),
+        "patientNotes": string_list("patientNotes"),
+        "concerns": string_list("concerns"),
+        "questionsForDoctor": string_list("questionsForDoctor"),
     }
 
 
@@ -366,9 +411,59 @@ async def humanize_previsit_summary(req: HumanizePreVisitSummaryRequest) -> dict
                 "content": req.rawPatientContext,
             },
         ],
-        max_tokens=420,
+        max_tokens=320,
+        model=os.getenv("QWEN_CHAT_MODEL", "qwen-plus").strip() or "qwen-plus",
     )
-    return {"patientId": req.patientId, "qwen": get_qwen_config()["model"], "summary": reply.strip()}
+    return {
+        "patientId": req.patientId,
+        "qwen": os.getenv("QWEN_CHAT_MODEL", "qwen-plus").strip() or "qwen-plus",
+        "summary": reply.strip(),
+    }
+
+
+@app.post("/api/medsbuddy/extract-patient-context")
+async def extract_patient_context(req: ExtractPatientContextRequest) -> dict[str, Any]:
+    logger.info("Alibaba ECS API called: extract-patient-context")
+    conversation = [
+        {
+            "role": message.role if message.role in {"user", "assistant"} else "user",
+            "content": message.content,
+        }
+        for message in req.conversation[-12:]
+        if message.content.strip()
+    ]
+    reply = await qwen_chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "You extract structured patient context for MedsBuddy's doctor visit prep. "
+                    "Use only facts stated in the conversation. Do not diagnose. Do not invent. "
+                    "Focus on today's visit. Return JSON only with exact keys: visitReason, "
+                    "symptoms, medications, onset, duration, patientNotes, concerns, questionsForDoctor. "
+                    "All list fields must be arrays of short strings. Empty unknown fields must be empty "
+                    "strings or empty arrays."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "patientId": req.patientId,
+                        "conversation": conversation,
+                    }
+                ),
+            },
+        ],
+        max_tokens=420,
+        model=os.getenv("QWEN_CHAT_MODEL", "qwen-plus").strip() or "qwen-plus",
+    )
+    parsed = parse_qwen_json(reply, "extract_patient_context")
+    return {
+        "patientId": req.patientId,
+        "qwen": os.getenv("QWEN_CHAT_MODEL", "qwen-plus").strip() or "qwen-plus",
+        "patientContext": normalize_patient_context(parsed),
+    }
 
 
 @app.post("/api/medsbuddy/generate-summary")
@@ -381,7 +476,16 @@ async def generate_summary(req: GenerateSummaryRequest) -> dict[str, Any]:
                 "role": "system",
                 "content": (
                     "You generate structured doctor visit summaries for MedsBuddy. "
-                    "Use the transcript as the source of truth. Include only discussed facts. "
+                    "Use the cleaned clinical transcript and approved patient context as the source of truth. "
+                    "Do not include raw STT artifacts, wake words, commands, or consent/introduction messages. "
+                    "Exclude phrases like please be quiet, stop talking, do not speak, Miss buddy, MedsBuddy wake words, "
+                    "Ariana Grande, and repeated duplicate instructions. "
+                    "If the doctor gave medication instructions, extract them into patient-friendly medication guidance. "
+                    "For example, 'use those tablets for one week, morning one tablet and evening one tablet' means "
+                    "'Take one tablet in the morning and one tablet in the evening for one week.' "
+                    "Do not say no medication changes if medication instructions exist. "
+                    "Do not put raw transcript under follow-up instructions. "
+                    "Include only discussed facts and keep wording patient-friendly. "
                     "Return JSON only with keys visitSummary, diagnosis, medications, allergies, "
                     "followUp, warningSigns, patientFriendlyExplanation, caregiverShareSummary."
                 ),
@@ -493,6 +597,64 @@ async def medsbuddy_chat(req: ChatRequest) -> dict[str, Any]:
     return {"reply": reply, "qwen": chat_model}
 
 
+@app.post("/api/medsbuddy/agent-router")
+async def medsbuddy_agent_router(req: AgentRouterRequest) -> dict[str, Any]:
+    logger.info("Alibaba ECS API called: agent-router")
+    chat_model = os.getenv("QWEN_CHAT_MODEL", "qwen-plus").strip() or "qwen-plus"
+    reply = await qwen_chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "You are MedsBuddy's AI Agent Router inside the MedsBuddy app. "
+                    "Classify the user's message into one app action. You are allowed to navigate app pages, "
+                    "save health data, prepare doctor visit context, generate QR flow, create chats, and answer normally. "
+                    "Never say you cannot navigate pages. Return JSON only with exact keys: "
+                    "intent, action, data, needsSave, navigateTo, response. "
+                    "Allowed actions: update_profile, add_symptom, remove_symptom, add_medication, doctor_visit_prep, navigate, "
+                    "generate_qr, new_chat, open_previous_chat, generate_doctor_visit_summary, answer, ask_follow_up. "
+                    "Allowed navigateTo values: /doctor, /reminders, /memory, /emergency, /talk, /profile, /. "
+                    "For profile data, data may include name, dob, bloodGroup, allergies, conditions, "
+                    "emergencyContacts, primaryPhysician. "
+                    "For symptoms, data may include symptoms array with name, severity, notes, onset, duration, "
+                    "and visitReason. "
+                    "If the user asks to remove/delete/clear a symptom, use action remove_symptom with data.keyword. "
+                    "For UTI removal, keyword should be UTI. "
+                    "When adding UTI symptoms, create one clean symptom unless the user clearly gives separate symptoms: "
+                    "name 'Possible urinary tract infection symptoms' and notes 'Burning or discomfort while urinating'. "
+                    "For medications, data may include medications array with name, dosage, frequency, timing. "
+                    "For doctor visit prep, data may include visitReason, symptoms, concerns, questionsForDoctor, "
+                    "timeline, onset, duration, patientNotes. "
+                    "If data is unclear, use action ask_follow_up, needsSave false, and ask one short question. "
+                    "Keep response warm, simple, and human. Do not invent medical facts."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "patientId": req.patientId,
+                        "message": req.message,
+                        "recentConversation": req.conversation[-8:],
+                        "currentState": req.currentState,
+                    }
+                ),
+            },
+        ],
+        max_tokens=420,
+        model=chat_model,
+    )
+    parsed = parse_qwen_json(reply, "agent_router")
+    if not isinstance(parsed.get("data"), dict):
+        parsed["data"] = {}
+    parsed.setdefault("intent", "")
+    parsed.setdefault("action", "answer")
+    parsed.setdefault("needsSave", False)
+    parsed.setdefault("navigateTo", "")
+    parsed.setdefault("response", "")
+    return {"patientId": req.patientId, "qwen": chat_model, "result": parsed}
+
+
 @app.get("/api/qwen-proof")
 def qwen_proof_get() -> dict[str, Any]:
     qwen = get_qwen_config()
@@ -511,6 +673,8 @@ def qwen_proof_get() -> dict[str, Any]:
             "GET /api/medsbuddy/memory/{patientId}",
             "POST /api/medsbuddy/ask-memory",
             "POST /api/medsbuddy/clarification-check",
+            "POST /api/medsbuddy/extract-patient-context",
+            "POST /api/medsbuddy/agent-router",
             "POST /api/medsbuddy/chat",
         ],
     }

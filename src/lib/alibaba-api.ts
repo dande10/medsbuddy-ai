@@ -16,11 +16,19 @@ export function medsBuddyApiUrl(path: string): string {
 
 async function postJson<T>(path: string, body: JsonRecord): Promise<T> {
   const url = medsBuddyApiUrl(path);
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 15000);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
   if (!response.ok) {
     const error = await response.text().catch(() => "");
     if (/^\s*<!doctype html/i.test(error) || /<html/i.test(error)) {
@@ -64,6 +72,38 @@ export type StructuredVisitSummary = {
   caregiverSummary?: string;
 };
 
+export type ExtractedPatientContext = {
+  visitReason: string;
+  symptoms: string[];
+  medications: string[];
+  onset: string;
+  duration: string;
+  patientNotes: string[];
+  concerns: string[];
+  questionsForDoctor: string[];
+};
+
+export type AgentRouterResult = {
+  intent?: string;
+  action?:
+    | "update_profile"
+    | "add_symptom"
+    | "remove_symptom"
+    | "add_medication"
+    | "doctor_visit_prep"
+    | "navigate"
+    | "generate_qr"
+    | "new_chat"
+    | "open_previous_chat"
+    | "generate_doctor_visit_summary"
+    | "answer"
+    | "ask_follow_up";
+  data?: JsonRecord;
+  needsSave?: boolean;
+  navigateTo?: string;
+  response?: string;
+};
+
 export function analyzeTranscript(payload: {
   patientId: string;
   transcript: string;
@@ -95,6 +135,16 @@ export function humanizePreVisitSummary(payload: { patientId: string; rawPatient
   );
 }
 
+export function extractPatientContext(payload: {
+  patientId: string;
+  conversation: { role: "user" | "assistant"; content: string }[];
+}) {
+  return postJson<{ patientId: string; qwen?: string; patientContext: ExtractedPatientContext }>(
+    "/api/medsbuddy/extract-patient-context",
+    payload,
+  );
+}
+
 export function saveVisitMemory(payload: {
   patientId: string;
   visitSummary: string;
@@ -112,4 +162,13 @@ export function chatWithMedsBuddy(payload: {
   messages: { role: "system" | "user" | "assistant"; content: string }[];
 }) {
   return postJson<{ reply: string; qwen?: string }>("/api/medsbuddy/chat", payload);
+}
+
+export function routeMedsBuddyAgent(payload: {
+  patientId: string;
+  message: string;
+  conversation?: { role: "user" | "assistant"; content: string }[];
+  currentState?: JsonRecord;
+}) {
+  return postJson<MedsBuddyApiResult<AgentRouterResult>>("/api/medsbuddy/agent-router", payload);
 }

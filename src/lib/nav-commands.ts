@@ -160,9 +160,14 @@ const navigationIntents: Array<{
     label: "Doctor Visit",
     exact: [
       /\b(schedule|book|plan|start|open)\s+(a\s+)?(doctor|physician|clinic)\s+(visit|appointment)\b/i,
+      /\b(go|navigate|take me|bring me|send me)\s+(to\s+)?(the\s+)?doctor\s+(page|tab|screen)\b/i,
+      /\b(open|show)\s+(the\s+)?doctor\s+(page|tab|screen)\b/i,
       /\b(doctor|physician|clinic)\s+(visit|appointment)\b/i,
     ],
-    fuzzy: [/\b(schedule|book|plan)\b/i, /\b(doctor|physician|clinic|appointment|visit)\b/i],
+    fuzzy: [
+      /\b(schedule|book|plan|go|navigate|open|show)\b/i,
+      /\b(doctor|physician|clinic|appointment|visit|page|tab)\b/i,
+    ],
   },
 ];
 
