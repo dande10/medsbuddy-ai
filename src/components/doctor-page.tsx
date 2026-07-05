@@ -27,6 +27,7 @@ import {
   AI,
   TRANSCRIPT_MERGE_DELAY_MS,
   analyzeTranscriptForAdvocateAlert,
+  buildApprovedContextFallbackResponse,
   buildCarePlanResponseWithQwen,
   buildDoctorConsentMessage,
   buildDoctorPatientContextAnswer,
@@ -312,7 +313,9 @@ export function DoctorPage() {
     };
     void speak(textToSpeak, () => {
       returnToListening();
-    }).catch(() => {
+    }).catch((error) => {
+      console.warn("[MedsBuddy voice] Could not speak visit message.", error);
+      setWakeStatus("MedsBuddy could not play audio. Check browser audio permissions.");
       returnToListening();
     });
   }, [doctorVisitConsent, medsBuddyTalking, stage, visitMessages]);
@@ -713,6 +716,19 @@ export function DoctorPage() {
               : "MedsBuddy is answering the doctor",
           );
         } else {
+          const approvedContextFallback = buildApprovedContextFallbackResponse(
+            latestTurnText,
+            state,
+            patientContextForVisit,
+          );
+          if (approvedContextFallback) {
+            addMedsBuddyVisitMessage(
+              approvedContextFallback,
+              "MedsBuddy answered from the approved patient context",
+            );
+            return;
+          }
+
           const alert = analyzeTranscriptForAdvocateAlert(
             conversationToTranscript(visitMessagesRef.current),
             patientContextForVisit,
@@ -925,12 +941,50 @@ export function DoctorPage() {
 
         const mimeType = getSupportedRecordingMimeType();
         const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        let recordingParts: Blob[] = [];
+        let stopTimer: ReturnType<typeof setTimeout> | null = null;
         mediaStreamRef.current = stream;
         mediaRecorderRef.current = recorder;
 
         recorder.ondataavailable = (event) => {
-          if (cancelled || !event.data || event.data.size < 1200) return;
-          const audioChunk = event.data;
+          if (cancelled || !event.data || event.data.size === 0) return;
+          recordingParts.push(event.data);
+        };
+
+        const startSegment = () => {
+          if (cancelled || recorder.state !== "inactive") return;
+          recordingParts = [];
+          try {
+            recorder.start();
+            stopTimer = setTimeout(() => {
+              if (!cancelled && recorder.state === "recording") {
+                recorder.stop();
+              }
+            }, 4500);
+          } catch (error) {
+            console.warn("[MedsBuddy STT] Could not start recorder.", error);
+            elevenLabsSttUnavailableRef.current = true;
+            setWakeStatus("ElevenLabs STT recorder failed. Falling back to browser speech.");
+            stopElevenLabsRecorder();
+            startBrowserRecognition();
+          }
+        };
+
+        recorder.onstop = () => {
+          if (stopTimer) {
+            clearTimeout(stopTimer);
+            stopTimer = null;
+          }
+          const audioSize = recordingParts.reduce((total, part) => total + part.size, 0);
+          if (cancelled) return;
+          if (audioSize < 1200) {
+            startSegment();
+            return;
+          }
+          const audioChunk = new Blob(recordingParts, {
+            type: recorder.mimeType || mimeType || "audio/webm",
+          });
+          recordingParts = [];
           sttRequestChainRef.current = sttRequestChainRef.current
             .catch(() => undefined)
             .then(async () => {
@@ -942,22 +996,29 @@ export function DoctorPage() {
                 }
               } catch (error) {
                 console.warn("[MedsBuddy STT] ElevenLabs STT failed. Falling back.", error);
+                cancelled = true;
                 elevenLabsSttUnavailableRef.current = true;
                 setWakeStatus("ElevenLabs STT unavailable. Falling back to browser speech.");
                 stopElevenLabsRecorder();
                 startBrowserRecognition();
               }
             });
+          startSegment();
         };
 
         recorder.onerror = () => {
+          cancelled = true;
+          if (stopTimer) {
+            clearTimeout(stopTimer);
+            stopTimer = null;
+          }
           elevenLabsSttUnavailableRef.current = true;
           setWakeStatus("ElevenLabs STT recorder failed. Falling back to browser speech.");
           stopElevenLabsRecorder();
           startBrowserRecognition();
         };
 
-        recorder.start(4500);
+        startSegment();
         setVoiceListening(true);
         setWakeStatus("ElevenLabs STT is listening");
       })

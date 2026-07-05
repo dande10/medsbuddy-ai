@@ -123,7 +123,9 @@ export type ExtractedPatientContext = {
 };
 
 export type AgentRouterResult = {
+  speaker?: "doctor" | "patient" | "medsbuddy" | "unknown";
   intent?: string;
+  confidence?: number;
   action?:
     | "update_profile"
     | "add_symptom"
@@ -142,6 +144,11 @@ export type AgentRouterResult = {
   needsSave?: boolean;
   navigateTo?: string;
   response?: string;
+  requestedFields?: string[];
+  missingFields?: string[];
+  patientClarificationQuestion?: string;
+  includePreviousVisitHistory?: boolean;
+  memoryUsed?: boolean;
 };
 
 export function analyzeTranscript(payload: {
@@ -239,6 +246,7 @@ export function routeMedsBuddyAgent(payload: {
   message: string;
   conversation?: { role: "user" | "assistant"; content: string }[];
   currentState?: JsonRecord;
+  mode?: "app" | "doctor_visit_live";
 }) {
   return postJson<MedsBuddyApiResult<AgentRouterResult>>("/api/medsbuddy/agent-router", payload);
 }

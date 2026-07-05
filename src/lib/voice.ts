@@ -53,7 +53,13 @@ export async function speak(text: string, onEnd?: () => void): Promise<void> {
         await audio.play();
         return;
       }
-    } catch {
+      const errorText = await res.text().catch(() => "");
+      console.warn("[MedsBuddy voice] ElevenLabs TTS failed", {
+        status: res.status,
+        body: errorText,
+      });
+    } catch (error) {
+      console.warn("[MedsBuddy voice] ElevenLabs TTS playback failed", error);
       /* fall through to fallback */
     }
   }
@@ -64,6 +70,10 @@ export async function speak(text: string, onEnd?: () => void): Promise<void> {
     u.rate = 1;
     u.pitch = 1;
     u.onend = () => onEnd?.();
+    u.onerror = (event) => {
+      console.warn("[MedsBuddy voice] Browser speech synthesis failed", event.error);
+      onEnd?.();
+    };
     window.speechSynthesis.speak(u);
   } else {
     onEnd?.();

@@ -1,7 +1,7 @@
 import { useApp } from "@/lib/store";
 import {
   analyzeCarePlanGaps,
-  analyzeTranscript,
+  routeMedsBuddyAgent,
   type CarePlanGapResult,
   type StructuredVisitSummary,
 } from "@/lib/alibaba-api";
@@ -411,6 +411,21 @@ type PatientContextRequestField =
   | "duration"
   | "concerns"
   | "questions for doctor";
+const APPROVED_CONTEXT_REQUEST_TERMS = [
+  "reason",
+  "today",
+  "visit",
+  "summary",
+  "context",
+  "patient",
+  "history",
+  "medication",
+  "medicine",
+  "symptom",
+  "allergy",
+  "concern",
+  "question",
+];
 type SemanticIntentDecision = {
   speaker: "doctor" | "patient" | "medsbuddy" | "unknown";
   intent: AdvocateIntent;
@@ -1553,6 +1568,23 @@ function buildIntentResponse(
   }
 }
 
+function buildApprovedContextFallbackResponse(
+  text: string,
+  state: ReturnType<typeof useApp.getState>,
+  approvedPreVisitSummary?: string,
+): string | null {
+  const clean = normalizeTranscriptText(text.replace(WAKE_WORD_PATTERN, " "));
+  const hasRequestCue =
+    /[?]$/.test(clean) ||
+    /\b(can|could|what|why|when|which|tell|give|show|summarize|summarise|explain)\b/i.test(clean);
+  if (!hasRequestCue) return null;
+  const mentionsApprovedContext = APPROVED_CONTEXT_REQUEST_TERMS.some((term) =>
+    clean.includes(term),
+  );
+  if (!mentionsApprovedContext) return null;
+  return buildDoctorPatientContextAnswer(state, approvedPreVisitSummary);
+}
+
 function isFastLocalIntent(intent: AdvocateIntent): boolean {
   return intent === "direct_call";
 }
@@ -1569,17 +1601,34 @@ async function detectSemanticIntentWithLLM({
   state: ReturnType<typeof useApp.getState>;
 }): Promise<SemanticIntentDecision | null> {
   try {
-    const result = await analyzeTranscript({
+    const result = await routeMedsBuddyAgent({
       patientId: getPatientId(state),
-      patientContext,
-      medicationHistory: buildMedicationHistory(state),
-      transcript: [
-        `Current visit transcript:\n${currentTranscript || "No transcript yet."}`,
-        `Latest transcript message:\n${latestTranscript}`,
-      ].join("\n\n"),
+      message: latestTranscript,
+      mode: "doctor_visit_live",
+      conversation: currentTranscript
+        .split("\n")
+        .filter(Boolean)
+        .slice(-12)
+        .map((line) => ({ role: "user", content: line })),
+      currentState: {
+        approvedPreVisitSummary: patientContext,
+        currentVisitTranscript: currentTranscript || "No transcript yet.",
+        medicationHistory: buildMedicationHistory(state),
+        patientContext: state.patientContext,
+        profile: {
+          name: state.profile.name,
+          allergies: state.profile.allergies,
+          conditions: state.profile.conditions,
+        },
+      },
     });
-    return parseSemanticIntentDecision(JSON.stringify(result.result ?? {}));
-  } catch {
+    const decision = parseSemanticIntentDecision(JSON.stringify(result.result ?? {}));
+    if (!decision) {
+      console.info("[MedsBuddy agent-router] No doctor-visit decision parsed", result.result);
+    }
+    return decision;
+  } catch (error) {
+    console.warn("[MedsBuddy agent-router] Doctor visit routing failed", error);
     return null;
   }
 }
@@ -1942,6 +1991,7 @@ export {
   buildCarePlanResponseWithQwen,
   buildDoctorConsentMessage,
   buildDoctorPatientContextAnswer,
+  buildApprovedContextFallbackResponse,
   buildIntentResponse,
   buildMedicationHistory,
   buildPatientSummary,

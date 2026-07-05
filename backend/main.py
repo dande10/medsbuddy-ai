@@ -158,6 +158,7 @@ class AgentRouterRequest(BaseModel):
     message: str = Field(..., min_length=1)
     conversation: list[dict[str, str]] = Field(default_factory=list)
     currentState: dict[str, Any] = Field(default_factory=dict)
+    mode: str = "app"
 
 
 class TtsRequest(BaseModel):
@@ -438,15 +439,12 @@ async def humanize_previsit_summary(req: HumanizePreVisitSummaryRequest) -> dict
                     "Remove unclear transcription artifacts, duplicates, filler words, and confusing phrases. "
                     "Do not invent medical facts. Keep only clear facts. Use sections: Reason for Visit, "
                     "Current Symptoms, Current Medications, Patient Notes, Allergies, Conditions. "
-                    "Use the patient name exactly as provided. If UTI or urinary discomfort appears, set Reason for Visit "
-                    "to 'Possible urinary tract infection symptoms.' and Current Symptoms to 'Burning or discomfort while urinating.' "
+                    "Use the patient name exactly as provided. "
                     "If Reason for Visit is blank but clear symptoms, concerns, onset, or duration exist, infer a concise "
-                    "reason from those facts, for example 'Severe sore throat with difficulty speaking for four days.' "
+                    "reason from those facts. "
                     "Never write 'Not clearly captured yet' when clear symptoms are available. "
-                    "Deduplicate medications by normalized name. prenatal/prenatal vitamin/prenatal one means Prenatal vitamin. "
-                    "vitamin B12/B12/vb12 means Vitamin B12. vitamin D/D3 means Vitamin D. "
-                    "Show each medication only once. Never say standard dose. If dosage is unknown, omit dosage and write "
-                    "'Vitamin B12 — once daily', not 'Vitamin B12 standard dose — once daily'. "
+                    "Deduplicate medications by normalized name. Show each medication only once. "
+                    "Never say standard dose. If dosage is unknown, omit dosage. "
                     "Return only clean text."
                 ),
             },
@@ -477,11 +475,8 @@ async def doctor_handoff(req: DoctorHandoffRequest) -> dict[str, Any]:
                     "Summarize the approved patient context for a physician in less than 100 words. "
                     "Remove duplicates, normalize medication names, and present only clinically relevant facts. "
                     "Use concise section labels. Never dump raw JSON or database fields. "
-                    "Never say standard dose, prenatal one, prenatal vitamin one tablet, or duplicate medication names. "
-                    "Normalize prenatal/prenatal vitamin/prenatal one to Prenatal vitamin; "
-                    "vitamin B12/B12/vb12 to Vitamin B12; vitamin D/D3 to Vitamin D. "
-                    "If UTI, urinary discomfort, burning, or discomfort while urinating appears, say Reason for today's visit: "
-                    "Possible urinary tract infection symptoms. If Reason for Visit is blank but symptoms or concerns exist, "
+                    "Never say standard dose or duplicate medication names. "
+                    "If Reason for Visit is blank but symptoms or concerns exist, "
                     "infer a concise reason from those approved facts. Never say 'Not clearly captured yet'. "
                     "Return only the spoken handoff text."
                 ),
@@ -738,53 +733,86 @@ async def medsbuddy_chat(req: ChatRequest) -> dict[str, Any]:
 async def medsbuddy_agent_router(req: AgentRouterRequest) -> dict[str, Any]:
     logger.info("Alibaba ECS API called: agent-router")
     chat_model = os.getenv("QWEN_CHAT_MODEL", "qwen-plus").strip() or "qwen-plus"
+    if req.mode == "doctor_visit_live":
+        system_prompt = (
+            "You are MedsBuddy's AI Agent Router inside a live doctor visit. "
+            "Analyze the latest transcript semantically. Decide speaker, doctor intent, whether MedsBuddy should respond, "
+            "and the exact response to say aloud if needed. Use only the patient's approved context and visit transcript. "
+            "Keep patient privacy and doctor consent in mind. Do not invent medical facts. "
+            "If the doctor asks for patient context, identify requestedFields and missingFields using only these exact field names: "
+            "reason for visit, symptoms, medications, allergies, medical history, duration, concerns, questions for doctor. "
+            "missingFields must include only requested fields absent from the approved patient context. "
+            "If information is missing, write one brief patientClarificationQuestion for the patient. "
+            "Set includePreviousVisitHistory true only when previous visit or medical history is requested. "
+            "Allowed intents: direct_call, patient_history_request, medication_history_request, visit_summary_request, "
+            "warning_signs_request, doctor_answers_request, care_plan_instruction, normal_conversation, none. "
+            "Return JSON only with exact keys: speaker, intent, confidence, shouldRespond, response, requestedFields, "
+            "missingFields, patientClarificationQuestion, includePreviousVisitHistory, memoryUsed."
+        )
+        user_payload = {
+            "patientId": req.patientId,
+            "latestTranscript": req.message,
+            "recentConversation": req.conversation[-12:],
+            "currentState": req.currentState,
+        }
+    else:
+        system_prompt = (
+            "You are MedsBuddy's AI Agent Router inside the MedsBuddy app. "
+            "Classify the user's message into one app action. You are allowed to navigate app pages, "
+            "save health data, prepare doctor visit context, generate QR flow, create chats, and answer normally. "
+            "Never say you cannot navigate pages. Return JSON only with exact keys: "
+            "intent, action, data, needsSave, navigateTo, response. "
+            "Allowed actions: update_profile, add_symptom, remove_symptom, add_medication, log_dose, doctor_visit_prep, navigate, "
+            "generate_qr, new_chat, open_previous_chat, generate_doctor_visit_summary, answer, ask_follow_up. "
+            "Allowed navigateTo values: /doctor, /reminders, /memory, /emergency, /talk, /profile, /. "
+            "For profile data, data may include name, dob, bloodGroup, allergies, conditions, "
+            "emergencyContacts, primaryPhysician. "
+            "For symptoms, data may include symptoms array with name, severity, notes, onset, duration, "
+            "and visitReason. "
+            "If the user asks to remove/delete/clear a symptom, use action remove_symptom with data.keyword. "
+            "For medications, data may include medications array with name, dosage, frequency, timing. "
+            "If the user says they already took, have taken, took, or completed a medication dose, use action log_dose with data.medicationName and data.status='taken'. Do not add the medication again. "
+            "For doctor visit prep, data may include visitReason, symptoms, concerns, questionsForDoctor, "
+            "timeline, onset, duration, patientNotes. "
+            "If the user only says an acknowledgement like okay, awesome, great, thanks, got it, or sounds good, "
+            "use action answer, needsSave false, and do not repeat or re-save previous symptoms or visit prep. "
+            "If data is unclear, use action ask_follow_up, needsSave false, and ask one short question. "
+            "Keep response warm, simple, and human. Do not invent medical facts."
+        )
+        user_payload = {
+            "patientId": req.patientId,
+            "message": req.message,
+            "recentConversation": req.conversation[-8:],
+            "currentState": req.currentState,
+        }
     reply = await qwen_chat(
         [
             {
                 "role": "system",
-                "content": (
-                    "You are MedsBuddy's AI Agent Router inside the MedsBuddy app. "
-                    "Classify the user's message into one app action. You are allowed to navigate app pages, "
-                    "save health data, prepare doctor visit context, generate QR flow, create chats, and answer normally. "
-                    "Never say you cannot navigate pages. Return JSON only with exact keys: "
-                    "intent, action, data, needsSave, navigateTo, response. "
-                    "Allowed actions: update_profile, add_symptom, remove_symptom, add_medication, log_dose, doctor_visit_prep, navigate, "
-                    "generate_qr, new_chat, open_previous_chat, generate_doctor_visit_summary, answer, ask_follow_up. "
-                    "Allowed navigateTo values: /doctor, /reminders, /memory, /emergency, /talk, /profile, /. "
-                    "For profile data, data may include name, dob, bloodGroup, allergies, conditions, "
-                    "emergencyContacts, primaryPhysician. "
-                    "For symptoms, data may include symptoms array with name, severity, notes, onset, duration, "
-                    "and visitReason. "
-                    "If the user asks to remove/delete/clear a symptom, use action remove_symptom with data.keyword. "
-                    "For UTI removal, keyword should be UTI. "
-                    "When adding UTI symptoms, create one clean symptom unless the user clearly gives separate symptoms: "
-                    "name 'Possible urinary tract infection symptoms' and notes 'Burning or discomfort while urinating'. "
-                    "For medications, data may include medications array with name, dosage, frequency, timing. "
-                    "If the user says they already took, have taken, took, or completed a medication dose, use action log_dose with data.medicationName and data.status='taken'. Do not add the medication again. "
-                    "For doctor visit prep, data may include visitReason, symptoms, concerns, questionsForDoctor, "
-                    "timeline, onset, duration, patientNotes. "
-                    "If the user only says an acknowledgement like okay, awesome, great, thanks, got it, or sounds good, "
-                    "use action answer, needsSave false, and do not repeat or re-save previous symptoms or visit prep. "
-                    "If data is unclear, use action ask_follow_up, needsSave false, and ask one short question. "
-                    "Keep response warm, simple, and human. Do not invent medical facts."
-                ),
+                "content": system_prompt,
             },
             {
                 "role": "user",
-                "content": json.dumps(
-                    {
-                        "patientId": req.patientId,
-                        "message": req.message,
-                        "recentConversation": req.conversation[-8:],
-                        "currentState": req.currentState,
-                    }
-                ),
+                "content": json.dumps(user_payload),
             },
         ],
         max_tokens=420,
         model=chat_model,
     )
     parsed = parse_qwen_json(reply, "agent_router")
+    if req.mode == "doctor_visit_live":
+        parsed.setdefault("speaker", "unknown")
+        parsed.setdefault("intent", "none")
+        parsed.setdefault("confidence", 0)
+        parsed.setdefault("shouldRespond", False)
+        parsed.setdefault("response", "")
+        parsed.setdefault("requestedFields", [])
+        parsed.setdefault("missingFields", [])
+        parsed.setdefault("patientClarificationQuestion", "")
+        parsed.setdefault("includePreviousVisitHistory", False)
+        parsed.setdefault("memoryUsed", False)
+        return {"patientId": req.patientId, "qwen": chat_model, "result": parsed}
+
     if not isinstance(parsed.get("data"), dict):
         parsed["data"] = {}
     parsed.setdefault("intent", "")
