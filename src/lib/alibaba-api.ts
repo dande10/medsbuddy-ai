@@ -81,6 +81,10 @@ export type AnalyzeTranscriptResult = {
   confidence?: number;
   shouldRespond?: boolean;
   response?: string;
+  requestedFields?: string[];
+  missingFields?: string[];
+  patientClarificationQuestion?: string;
+  includePreviousVisitHistory?: boolean;
   memoryUsed?: boolean;
 };
 

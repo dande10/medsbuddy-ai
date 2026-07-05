@@ -9,9 +9,9 @@ from typing import Any, Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 load_dotenv()
@@ -394,11 +394,18 @@ async def reason(req: ReasonRequest) -> dict[str, Any]:
                     "confidence, whether MedsBuddy should respond, and a short response if needed. "
                     "If the doctor asks for patient details, symptoms, medications, history, or reason for visit, "
                     "summarize the approved patient context for a physician in less than 100 words. "
+                    "If the doctor asks for patient context, identify requestedFields and missingFields using only "
+                    "these exact field names: reason for visit, symptoms, medications, allergies, medical history, "
+                    "duration, concerns, questions for doctor. missingFields must include only requested fields "
+                    "that are absent from the approved patient context. If information is missing, write a brief "
+                    "patientClarificationQuestion asking the patient for the most important missing item. "
+                    "Set includePreviousVisitHistory true only when previous visit or medical history is requested. "
                     "Remove duplicates, normalize medication names, and present only clinically relevant facts. "
                     "Never dump raw JSON or database fields. Never say standard dose, prenatal one, "
                     "prenatal vitamin one tablet, or duplicate medication names. "
                     "Use approved visit memory only when relevant. Return JSON only with keys "
-                    "speaker, intent, confidence, shouldRespond, response, memoryUsed."
+                    "speaker, intent, confidence, shouldRespond, response, requestedFields, missingFields, "
+                    "patientClarificationQuestion, includePreviousVisitHistory, memoryUsed."
                 ),
             },
             {
@@ -837,29 +844,151 @@ async def qwen_proof_post(body: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.post("/api/stt")
-async def elevenlabs_stt(audio: UploadFile = File(...)) -> dict[str, str]:
+async def elevenlabs_stt(
+    request: Request,
+    audio: Optional[UploadFile] = File(None),
+    file: Optional[UploadFile] = File(None),
+) -> Response | dict[str, str]:
     key = os.getenv("ELEVENLABS_API_KEY", "").strip()
     if not key:
         raise HTTPException(status_code=500, detail="Missing ELEVENLABS_API_KEY")
 
-    files = {"file": (audio.filename or "doctor-visit.webm", await audio.read(), audio.content_type)}
+    request_content_type = request.headers.get("content-type", "")
+    upload = audio or file
+    upload_field_name = "audio" if audio is not None else "file" if file is not None else ""
+
+    if upload is None:
+        logger.error(
+            "[ElevenLabs STT] Missing audio upload: %s",
+            {"request.content_type": request_content_type, "accepted_fields": ["audio", "file"]},
+        )
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "audio file required",
+                "requestContentType": request_content_type,
+                "acceptedFields": ["audio", "file"],
+            },
+        )
+
+    audio_bytes = await upload.read()
+    uploaded_filename = upload.filename or "doctor-visit.webm"
+    uploaded_mime_type = upload.content_type or "application/octet-stream"
+    uploaded_file_size = len(audio_bytes)
+    first_20_bytes = audio_bytes[:20].hex()
+
+    logger.info(
+        "[ElevenLabs STT] Incoming upload: %s",
+        {
+            "request.content_type": request_content_type,
+            "uploaded_field_name": upload_field_name,
+            "uploaded_filename": uploaded_filename,
+            "uploaded_mime_type": uploaded_mime_type,
+            "uploaded_file_size": uploaded_file_size,
+            "first_20_bytes": first_20_bytes,
+        },
+    )
+
+    if uploaded_file_size == 0:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "uploaded audio file is empty",
+                "requestContentType": request_content_type,
+                "uploadedFieldName": upload_field_name,
+                "uploadedFilename": uploaded_filename,
+                "uploadedMimeType": uploaded_mime_type,
+                "uploadedFileSize": uploaded_file_size,
+                "first20Bytes": first_20_bytes,
+            },
+        )
+
+    files = {"file": (uploaded_filename, audio_bytes, uploaded_mime_type)}
     data = {
         "model_id": "scribe_v2",
         "tag_audio_events": "false",
         "diarize": "true",
         "num_speakers": "2",
     }
+
+    logger.info(
+        "[ElevenLabs STT] Request payload: %s",
+        {
+            "url": "https://api.elevenlabs.io/v1/speech-to-text",
+            "method": "POST",
+            "data": data,
+            "files": {
+                "file": {
+                    "filename": uploaded_filename,
+                    "incoming_field_name": upload_field_name,
+                    "content_type": uploaded_mime_type,
+                    "size": uploaded_file_size,
+                    "first_20_bytes": first_20_bytes,
+                }
+            },
+        },
+    )
+
     async with httpx.AsyncClient(timeout=90) as client:
-        response = await client.post(
-            "https://api.elevenlabs.io/v1/speech-to-text",
-            headers={"xi-api-key": key},
-            data=data,
-            files=files,
-        )
+        try:
+            response = await client.post(
+                "https://api.elevenlabs.io/v1/speech-to-text",
+                headers={"xi-api-key": key},
+                data=data,
+                files=files,
+            )
+        except httpx.HTTPError as exc:
+            logger.exception("[ElevenLabs STT] Request failed before response")
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": "ElevenLabs STT request failed",
+                    "backendError": str(exc),
+                    "requestContentType": request_content_type,
+                    "uploadedFieldName": upload_field_name,
+                    "uploadedFilename": uploaded_filename,
+                    "uploadedMimeType": uploaded_mime_type,
+                    "uploadedFileSize": uploaded_file_size,
+                    "first20Bytes": first_20_bytes,
+                },
+            )
+
+    response_body = response.text
+    logger.info(
+        "[ElevenLabs STT] Response: %s",
+        {"status_code": response.status_code, "body": response_body},
+    )
+
     if response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=response.text[:500])
-    data = response.json()
-    return {"text": data.get("text", "").strip(), "rawText": data.get("text", "").strip()}
+        return JSONResponse(
+            status_code=response.status_code,
+            content={
+                "error": "ElevenLabs STT failed",
+                "status": response.status_code,
+                "elevenLabsResponseBody": response_body,
+                "requestContentType": request_content_type,
+                "uploadedFieldName": upload_field_name,
+                "uploadedFilename": uploaded_filename,
+                "uploadedMimeType": uploaded_mime_type,
+                "uploadedFileSize": uploaded_file_size,
+                "first20Bytes": first_20_bytes,
+            },
+        )
+
+    try:
+        data = response.json()
+    except ValueError:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "ElevenLabs STT returned invalid JSON",
+                "status": response.status_code,
+                "elevenLabsResponseBody": response_body,
+            },
+        )
+
+    transcript = str(data.get("text") or "").strip()
+    return {"text": transcript, "rawText": transcript}
 
 
 @app.post("/api/tts")

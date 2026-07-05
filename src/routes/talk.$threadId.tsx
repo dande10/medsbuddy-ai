@@ -37,17 +37,6 @@ const SUGGESTIONS = [
   "Help me prepare for my doctor visit",
 ];
 
-type LocalPatientContextExtraction = {
-  symptoms: string[];
-  medications: string[];
-  visitReason?: string;
-  onset?: string;
-  duration?: string;
-  patientNotes: string[];
-  concerns: string[];
-  questionsForDoctor: string[];
-};
-
 function buildSystemPrompt(state: ReturnType<typeof useApp.getState>): string {
   const { profile, meds, doses, symptoms } = state;
   const recentDoses = doses
@@ -74,14 +63,13 @@ function buildSystemPrompt(state: ReturnType<typeof useApp.getState>): string {
     "Do not say you added, logged, saved, or made a note of something. The app can track quietly in the background.",
     "Never say you cannot navigate screens, pages, tabs, or the app interface. MedsBuddy is inside the app and can help the patient use app flows when asked.",
     "If the patient asks to prepare for a doctor visit, help immediately: summarize the main concern, ask one short follow-up question, and explain that the Doctor Visit page will use the approved context.",
-    'Example style: "That sounds really painful. Vitamin issues can sometimes play a role, but severe leg pain can also come from muscle, nerve, or circulation problems. Is it one-sided, swollen, red, warm, or getting worse?"',
     "",
     "## Proactive care",
     "Acknowledge symptoms warmly. If a symptom is mentioned, you may say you can help track it, but do not announce internal logging details unless the patient asks.",
-    "For possible causes, give a short, careful answer and suggest checking with a clinician when symptoms are severe, new, worsening, one-sided, or concerning.",
+    "For possible causes, give a short, careful answer and suggest checking with a clinician when symptoms are severe, new, worsening, or concerning.",
     "",
     "## Boundaries",
-    "You are not a doctor. For urgent symptoms (chest pain, trouble breathing, severe bleeding, suicidal thoughts), kindly tell the patient to call emergency services.",
+    "You are not a doctor. For urgent or life-threatening symptoms, kindly tell the patient to call emergency services.",
     "Use the patient context below — never invent medications or symptoms.",
     "",
     "## Patient context",
@@ -92,27 +80,11 @@ function buildSystemPrompt(state: ReturnType<typeof useApp.getState>): string {
   ].join("\n");
 }
 
-function looksLikeSymptom(text: string): { name: string; severity: number } | null {
-  const hasSymptomStatement =
-    /\b(?:i (?:feel|have|am)|my .+ (?:hurts|aches)|please add|add (?:the )?symptoms?|log (?:the )?symptoms?)\b[^.]*/i.test(
-      text,
-    );
-  if (!hasSymptomStatement) return null;
-  const symptomMatch = text.match(
-    /\b(uti|urinary tract infection|urination discomfort|burning while urinating|discomfort while urinating|itching|itchy|dizz\w*|headache|nause\w*|tired|fatigue|pain|chest pain|short(?:ness)? of breath|cough|fever|anxious|nausea|vomit\w*)\b/i,
-  );
-  if (!symptomMatch) return null;
-  const symptom = symptomMatch[0].toLowerCase();
-  return {
-    name:
-      symptom === "uti" || symptom === "urinary tract infection" ? "possible UTI concern" : symptom,
-    severity: 5,
-  };
-}
-
 function isMeaningfulPatientContextMessage(text: string): boolean {
-  return /\b(doctor|visit|symptom|pain|burn|burning|urin|pee|uti|itch|itching|medication|medicine|dose|vitamin|started|yesterday|today|concern|worried|question|ask)\b/i.test(
-    text,
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length < 8) return false;
+  return /\b(doctor|visit|appointment|symptom|medication|medicine|dose|started|timeline|concern|worried|question|ask|health|feel|feeling)\b/i.test(
+    clean,
   );
 }
 
@@ -147,10 +119,6 @@ function clinicalTextMentionsItem(text: string, item: string): boolean {
   const cleanItem = normalizeClinicalText(item);
   if (!cleanText || !cleanItem) return false;
   if (cleanText.includes(cleanItem)) return true;
-  if (isUtiRelatedText(item) && isUtiRelatedText(text)) return true;
-  if (/\bmemory|forget|remember|recall|confus/i.test(item)) {
-    return /\bmemory|forget|remember|recall|confus/i.test(text);
-  }
 
   const keywords = getClinicalKeywords(item);
   if (!keywords.length) return false;
@@ -226,125 +194,6 @@ function unique(values: string[]): string[] {
   return result;
 }
 
-function extractLocalPatientContext(
-  text: string,
-  recentUserMessages: ChatMessage[],
-): LocalPatientContextExtraction | null {
-  const combinedUserText = [...recentUserMessages.map((message) => message.content), text].join(
-    " ",
-  );
-  const contextLower = combinedUserText.toLowerCase();
-  const currentLower = text.toLowerCase();
-  const symptoms: string[] = [];
-  const medications: string[] = [];
-  const patientNotes: string[] = [];
-  const concerns: string[] = [];
-  const questionsForDoctor: string[] = [];
-
-  if (
-    /\b(amoxicillin|azithromycin|ibuprofen|acetaminophen|tylenol|advil|antibiotic)\b/i.test(text)
-  ) {
-    const medicationName =
-      text.match(
-        /\b(amoxicillin|azithromycin|ibuprofen|acetaminophen|tylenol|advil|antibiotic)\b/i,
-      )?.[0] ?? "Medication";
-    const frequency = /\b(twice|two times|2 times)\b/i.test(text)
-      ? "twice daily"
-      : /\b(once|one time|1 time)\b/i.test(text)
-        ? "once daily"
-        : /\b(daily|every day)\b/i.test(text)
-          ? "daily"
-          : "";
-    medications.push(
-      [medicationName.charAt(0).toUpperCase() + medicationName.slice(1), frequency]
-        .filter(Boolean)
-        .join(", "),
-    );
-  }
-
-  if (/\b(uti|urinary tract infection|urinary infection)\b/i.test(currentLower)) {
-    symptoms.push("Possible urinary tract infection concern");
-    concerns.push("Patient is concerned about a possible UTI.");
-  }
-  if (
-    /\b(burn|burning|discomfort|pain)\b[^.?!]*(?:urinating|urination|pee|peeing|urine)/i.test(
-      currentLower,
-    )
-  ) {
-    symptoms.push("Burning or discomfort while urinating");
-  }
-  if (/\b(itch|itching|itchy)\b/i.test(currentLower)) {
-    symptoms.push("Itching");
-  }
-  if (/\blower belly|lower abdomen|pelvic|bladder\b/i.test(currentLower)) {
-    symptoms.push("Lower belly discomfort");
-  }
-  if (/\b(fever|chills)\b/i.test(currentLower)) {
-    symptoms.push("Fever or chills");
-  }
-  if (
-    /\b(urgency|urgent need to pee|frequent urination|pee often|urinate often)\b/i.test(
-      currentLower,
-    )
-  ) {
-    symptoms.push("Urinary urgency or frequent urination");
-  }
-
-  const onset = /\byesterday\b/i.test(contextLower)
-    ? "Started yesterday"
-    : /\btoday\b/i.test(contextLower)
-      ? "Started today"
-      : "";
-  const duration =
-    /\byesterday\b/i.test(contextLower) && /\btoday\b/i.test(contextLower)
-      ? "Symptoms started yesterday and continued today"
-      : "";
-
-  if (/\b(pregnant|pregnancy|prenatal)\b/i.test(contextLower)) {
-    patientNotes.push("Pregnancy context may be relevant.");
-  }
-  if (/\b(ask|question|doctor)\b/i.test(currentLower) && /\?/.test(text)) {
-    questionsForDoctor.push(text);
-  }
-
-  const visitReason = symptoms.some((symptom) => /uti|urinary|urinating/i.test(symptom))
-    ? "Possible urinary tract infection symptoms"
-    : "";
-  const hasUtiSymptoms = symptoms.some((symptom) => isUtiRelatedText(symptom));
-  const cleanSymptoms = hasUtiSymptoms
-    ? [
-        "Possible urinary tract infection symptoms",
-        ...symptoms.filter((symptom) => !isUtiRelatedText(symptom)),
-      ]
-    : symptoms;
-  const cleanPatientNotes = hasUtiSymptoms
-    ? unique(["Burning or discomfort while urinating", ...patientNotes])
-    : patientNotes;
-
-  const hasAddCommand = /\b(add|log|save|remember|include)\b/i.test(currentLower);
-  const hasUsefulContext =
-    cleanSymptoms.length > 0 ||
-    medications.length > 0 ||
-    cleanPatientNotes.length > 0 ||
-    concerns.length > 0 ||
-    questionsForDoctor.length > 0 ||
-    Boolean(onset);
-
-  if (!hasUsefulContext) return null;
-  if (!hasAddCommand && !isMeaningfulPatientContextMessage(text)) return null;
-
-  return {
-    symptoms: unique(cleanSymptoms),
-    medications: unique(medications),
-    visitReason,
-    onset,
-    duration,
-    patientNotes: unique(cleanPatientNotes),
-    concerns: unique(concerns),
-    questionsForDoctor: unique(questionsForDoctor),
-  };
-}
-
 function humanizeAssistantReply(reply: string): string {
   const withoutNoteLanguage = reply
     .replace(/\*\*/g, "")
@@ -377,8 +226,8 @@ function buildOfflineReply(text: string, state: ReturnType<typeof useApp.getStat
   const lower = text.toLowerCase();
   const { meds, symptoms, visits } = state;
 
-  if (/symptom|pain|fever|dizz|tired|fatigue|nausea|cough|headache|back|leg/i.test(text)) {
-    return "I saved this symptom on your device. I can still track symptoms offline, and you can show them during the doctor visit.";
+  if (/\b(symptom|symptoms|health concern|concern|feel|feeling)\b/i.test(text)) {
+    return "I'm offline, but I can still keep this health concern available on this device for your doctor visit.";
   }
 
   if (/med|medicine|dose|pill|take|taken/i.test(lower)) {
@@ -446,19 +295,6 @@ function isAcknowledgementOnly(text: string): boolean {
   );
 }
 
-function buildContextSavedReply(context: LocalPatientContextExtraction): string {
-  if (context.medications.length) {
-    return "I've updated your health summary and will include this medication information in today's doctor visit.";
-  }
-  if (context.symptoms.length) {
-    return "I've updated your health summary and will include these symptoms in today's doctor visit.";
-  }
-  if (context.questionsForDoctor.length) {
-    return "I've added that to the questions for your doctor visit.";
-  }
-  return "I've updated your doctor-visit summary with that information.";
-}
-
 type AgentDataRecord = Record<string, unknown>;
 
 function asRecord(value: unknown): AgentDataRecord {
@@ -521,42 +357,15 @@ function findMedicationMention(
   });
 }
 
-function isUtiRelatedText(text: string): boolean {
-  return /\buti\b|urinary tract infection|urinary infection|burning while urinating|discomfort while urinating|burning or discomfort while urinating|urinating|urination|pee|peeing/i.test(
-    text,
-  );
-}
-
 function normalizeAgentSymptomItems(items: unknown[], fallbackText: string) {
-  const records = items.map((item) => asRecord(item));
-  const combinedText = [
-    fallbackText,
-    ...records.flatMap((record) => [
-      stringValue(record.name || record.symptomName),
-      stringValue(record.notes),
-      stringValue(record.onset),
-      stringValue(record.duration),
-    ]),
-  ].join(" ");
-  const hasUti = isUtiRelatedText(combinedText);
-  const nonUtiSymptoms = records
+  return items
+    .map((item) => asRecord(item))
     .map((record) => ({
       name: stringValue(record.name || record.symptomName),
-      notes: stringValue(record.notes),
+      notes: stringValue(record.notes || fallbackText),
       severity: normalizeSeverity(record.severity),
     }))
-    .filter((symptom) => symptom.name && !isUtiRelatedText(`${symptom.name} ${symptom.notes}`));
-
-  if (!hasUti) return nonUtiSymptoms;
-
-  return [
-    {
-      name: "Possible urinary tract infection symptoms",
-      notes: "Burning or discomfort while urinating",
-      severity: 5,
-    },
-    ...nonUtiSymptoms,
-  ];
+    .filter((symptom) => symptom.name);
 }
 
 function buildAgentRouterState(state: ReturnType<typeof useApp.getState>) {
@@ -870,13 +679,9 @@ function TalkThreadPage() {
         const changed = removedCount > 0 && afterState.symptoms.length < beforeCount;
 
         if (changed) {
-          reply = isUtiRelatedText(keyword)
-            ? "Done — I removed the UTI-related symptoms from your notes."
-            : `Done — I removed ${keyword} from your symptom notes.`;
+          reply = `Done — I removed ${keyword} from your symptom notes.`;
         } else {
-          reply = isUtiRelatedText(keyword)
-            ? "I checked your notes, but I did not find any UTI-related symptoms to remove."
-            : `I checked your notes, but I did not find ${keyword} in your symptoms.`;
+          reply = `I checked your notes, but I did not find ${keyword} in your symptoms.`;
         }
       }
 
@@ -1008,59 +813,6 @@ function TalkThreadPage() {
       return;
     }
 
-    if (
-      /\b(remove|delete|clear)\b/i.test(text) &&
-      /\b(symptom|symptoms|uti|urinary|burning|urinating)\b/i.test(text)
-    ) {
-      const keyword = isUtiRelatedText(text) ? "UTI" : text;
-      const beforeCount = useApp.getState().symptoms.length;
-      const removedCount = removeSymptomsByKeyword(keyword);
-      const afterCount = useApp.getState().symptoms.length;
-      const changed = removedCount > 0 && afterCount < beforeCount;
-      await speakAndContinue(
-        changed
-          ? isUtiRelatedText(keyword)
-            ? "Done — I removed the UTI-related symptoms from your notes."
-            : "Done — I removed that symptom from your notes."
-          : isUtiRelatedText(keyword)
-            ? "I checked your notes, but I did not find any UTI-related symptoms to remove."
-            : "I checked your notes, but I did not find that symptom to remove.",
-      );
-      return;
-    }
-
-    const currentThreadBeforeUpdate = stateBeforeContextUpdate.threads.find(
-      (candidate) => candidate.id === thread.id,
-    );
-    const currentVisitStartedAt =
-      stateBeforeContextUpdate.patientContext.currentVisitStartedAt ?? 0;
-    const recentUserMessages =
-      currentThreadBeforeUpdate?.messages
-        .filter((message) => message.role === "user" && message.at >= currentVisitStartedAt)
-        .slice(-8) ?? [];
-    const localPatientContext = extractLocalPatientContext(text, recentUserMessages);
-
-    const symp = looksLikeSymptom(text);
-    const localSymptomNames = localPatientContext?.symptoms ?? [];
-    const symptomNamesToSave = unique([...(symp ? [symp.name] : []), ...localSymptomNames]);
-    const existingSymptomNames = new Set(
-      stateBeforeContextUpdate.symptoms.map((symptom) => symptom.name.toLowerCase()),
-    );
-
-    for (const symptomName of symptomNamesToSave) {
-      if (existingSymptomNames.has(symptomName.toLowerCase())) continue;
-      addSymptom({
-        name: symptomName,
-        severity: symp?.severity ?? 5,
-        notes: isUtiRelatedText(symptomName) ? "Burning or discomfort while urinating" : text,
-      });
-      existingSymptomNames.add(symptomName.toLowerCase());
-    }
-
-    if (localPatientContext) {
-      updateCurrentVisitPatientContext(localPatientContext, text);
-    }
-
     if (patientContextExtractionAvailableRef.current && isMeaningfulPatientContextMessage(text)) {
       const state = useApp.getState();
       const current = state.threads.find((candidate) => candidate.id === thread.id);
@@ -1089,12 +841,6 @@ function TalkThreadPage() {
           }
           console.info("Patient context extraction unavailable.");
         });
-    }
-
-    if (localPatientContext && /\b(add|log|save|remember|include)\b/i.test(text)) {
-      const reply = buildContextSavedReply(localPatientContext);
-      await speakAndContinue(reply);
-      return;
     }
 
     const fastReply = buildFastLocalReply(text);
