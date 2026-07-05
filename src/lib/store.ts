@@ -97,6 +97,7 @@ export interface PatientContext {
   concerns: string[];
   questionsForDoctor: string[];
   pregnancyContext?: string;
+  currentVisitStartedAt: number | null;
   updatedAt: number | null;
 }
 
@@ -158,6 +159,7 @@ interface State {
   addNote: (text: string) => HealthNote;
   addDoctorVisitPrep: (note: Omit<DoctorVisitPrepNote, "id" | "at">) => DoctorVisitPrepNote;
   updatePatientContext: (context: Partial<Omit<PatientContext, "updatedAt">>) => PatientContext;
+  resetCurrentPatientContext: () => PatientContext;
   removeNote: (id: string) => void;
   addQuestion: (text: string) => DoctorQuestion;
   toggleQuestion: (id: string) => void;
@@ -190,6 +192,7 @@ const defaultPatientContext: PatientContext = {
   concerns: [],
   questionsForDoctor: [],
   pregnancyContext: "",
+  currentVisitStartedAt: null,
   updatedAt: null,
 };
 
@@ -394,9 +397,19 @@ export const useApp = create<State>()(
             context.questionsForDoctor,
           ),
           pregnancyContext: context.pregnancyContext?.trim() || current.pregnancyContext,
+          currentVisitStartedAt: current.currentVisitStartedAt ?? Date.now(),
           updatedAt: Date.now(),
         };
         set({ patientContext: next });
+        return next;
+      },
+      resetCurrentPatientContext: () => {
+        const next: PatientContext = {
+          ...defaultPatientContext,
+          currentVisitStartedAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        set({ patientContext: next, doctorVisitPrep: [] });
         return next;
       },
       removeNote: (nid) => set({ notes: get().notes.filter((n) => n.id !== nid) }),

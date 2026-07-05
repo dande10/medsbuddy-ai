@@ -64,7 +64,7 @@ declare global {
 }
 
 function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string {
-  const { profile, meds, doses, notes, visits, patientContext } = state;
+  const { profile, meds, doses, patientContext } = state;
   const last7 = Date.now() - 7 * 86400000;
   const taken = doses.filter((d) => d.at >= last7 && d.status === "taken").length;
   const missed = doses.filter((d) => d.at >= last7 && d.status !== "taken").length;
@@ -81,18 +81,6 @@ function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string 
     updatedAt: null,
     ...(patientContext ?? {}),
   };
-  const recentHealthNotes = notes
-    .filter((note) => note.at >= last7)
-    .filter((note) =>
-      /doctor visit prep|uti|urinary|urinating|itching|burning|discomfort/i.test(note.text),
-    )
-    .slice(0, 3)
-    .map((note) => note.text.replace(/^Doctor visit prep\.?\s*/i, "").trim());
-  const approvedVisitMemories = visits
-    .slice(0, 3)
-    .map((visit) => visit.patientSummary || visit.summary)
-    .filter(Boolean);
-
   const medicationHistory =
     doses.length === 0
       ? "I don't have enough recent medication information yet."
@@ -118,8 +106,6 @@ function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string 
       patientContext: preVisitContext,
       savedMedications: preVisitContext.medications,
       medicationHistory,
-      recentVisitPrepNotes: recentHealthNotes,
-      approvedVisitMemories,
     },
     null,
     2,
@@ -1136,6 +1122,35 @@ function buildDoctorPatientContextAnswer(
     .join("\n");
 }
 
+function buildPreviousVisitHistorySection(state: ReturnType<typeof useApp.getState>): string {
+  const visitLines = state.visits
+    .slice(0, 3)
+    .map((visit) =>
+      [
+        visit.summary,
+        visit.diagnosisOrConcerns ? `Diagnosis or concern: ${visit.diagnosisOrConcerns}` : "",
+        visit.medicationChanges ? `Medication changes: ${visit.medicationChanges}` : "",
+        visit.actionItems ? `Action items: ${visit.actionItems}` : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .filter(Boolean);
+
+  if (!visitLines.length) {
+    return "Previous Visit History:\n• No previous visit history is saved yet.";
+  }
+
+  return [
+    "Previous Visit History:",
+    ...visitLines.map((line) => `• ${removeDuplicateRepeatedPhrases(line)}`),
+  ].join("\n");
+}
+
+function shouldIncludePreviousVisitHistory(text: string): boolean {
+  return getRequestedPatientContextFields(text).some((field) => field === "medical history");
+}
+
 type PatientContextRequestField =
   | "reason for visit"
   | "symptoms"
@@ -1302,8 +1317,16 @@ function looksLikeDoctorCarePlanInstruction(text: string): boolean {
   ) {
     return false;
   }
-  return /(?:i will|i'll|we will|start|prescrib|give (?:her|him|the patient|you)|take|continue|stop|finish|schedule|follow up|follow-up|twice|daily|every day|amoxicillin|antibiotic|mg|tablet|capsule)/i.test(
-    clean,
+  return (
+    /(?:i will|i'll|we will|start|prescrib|give (?:her|him|the patient|you)|take|continue|stop|finish|schedule|follow up|follow-up|twice|daily|every day|amoxicillin|antibiotic|mg|tablet|capsule)/i.test(
+      clean,
+    ) ||
+    /\b(?:in|within|after)\s+(?:one|two|three|four|five|seven|ten|fourteen|\d+)\s*(?:days?|weeks?|months?)\b/i.test(
+      clean,
+    ) ||
+    /\b(?:if|watch for|seek care|urgent care|emergency|worsening|worse|warning signs?)\b/i.test(
+      clean,
+    )
   );
 }
 
@@ -1329,6 +1352,18 @@ function mergeRecentDoctorCarePlan(messages: ConversationMessage[], fallbackText
     .trim();
 }
 
+function collectDoctorCarePlan(messages: ConversationMessage[], fallbackText: string): string {
+  const doctorCarePlanLines = messages
+    .filter((message) => message.speaker === "Doctor")
+    .map((message) => message.text)
+    .filter((line) => looksLikeDoctorCarePlanInstruction(line));
+  const lines = [...doctorCarePlanLines, fallbackText]
+    .map((line) => cleanTranscriptInput(line).replace(WAKE_WORD_PATTERN, " ").trim())
+    .filter(Boolean);
+
+  return removeDuplicateRepeatedPhrases(lines.slice(-8).join(" ")).replace(/\s+/g, " ").trim();
+}
+
 function extractMedicationInstructionDetails(text: string): MedicationInstructionDetails {
   const clean = cleanTranscriptInput(text).replace(WAKE_WORD_PATTERN, " ").replace(/\s+/g, " ");
   const lower = clean.toLowerCase();
@@ -1338,9 +1373,13 @@ function extractMedicationInstructionDetails(text: string): MedicationInstructio
   const afterAction = lower.match(
     /\b(?:start|prescribe|prescribed|give|take|continue|finish|stop)\s+(?:her|him|the patient|you|the)?\s*([a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2})/i,
   )?.[1];
-  const dose = clean.match(
-    /\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|units?|tablets?|tabs?|capsules?|caps?|pills?|puffs?|drops?)\b/i,
-  )?.[0];
+  const dose =
+    clean.match(
+      /\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|units?|tablets?|tabs?|capsules?|caps?|pills?|puffs?|drops?)\b/i,
+    )?.[0] ||
+    clean.match(
+      /\b(?:one|two|three|four|five|[1-5])\s+(?:tablets?|tabs?|capsules?|caps?|pills?|doses?)\b/i,
+    )?.[0];
   const interval = clean.match(/\b(?:every|q)\s*\d+\s*(?:hours?|hrs?|h|days?|d)\b/i)?.[0];
   const frequency = clean.match(
     /\b(?:once|twice|three times|four times|[1-4] times)\s+(?:a|per)\s+day\b|\b(?:daily|bid|tid|qid)\b/i,
@@ -1349,7 +1388,7 @@ function extractMedicationInstructionDetails(text: string): MedicationInstructio
     /\b(?:morning|afternoon|evening|night|bedtime|breakfast|lunch|dinner|with food|after food|before food|with meals?|after meals?|before meals?|empty stomach)\b/i,
   )?.[0];
   const duration = clean.match(
-    /\bfor\s+\d+\s*(?:days?|weeks?|months?)\b|\b(?:\d+|three|five|seven|ten|fourteen)\s*(?:days?|weeks?|months?)\s*(?:course)?\b/i,
+    /\bfor\s+(?:one|two|three|four|five|seven|ten|fourteen|\d+)\s*(?:days?|weeks?|months?)\b|\b(?:one|two|three|four|five|seven|ten|fourteen|\d+)\s*(?:days?|weeks?|months?)\s*(?:course)?\b/i,
   )?.[0];
 
   return {
@@ -1363,9 +1402,12 @@ function extractMedicationInstructionDetails(text: string): MedicationInstructio
 }
 
 function getMissingMedicationInstructionFields(details: MedicationInstructionDetails): string[] {
-  return [!details.medication && "medication name", !details.duration && "duration"].filter(
-    Boolean,
-  ) as string[];
+  return [
+    isMissingMedicationName(details) && "medication name",
+    !hasMedicationDose(details) && "dosage",
+    !hasMedicationFrequency(details) && "frequency",
+    !details.duration && "duration",
+  ].filter(Boolean) as string[];
 }
 
 function carePlanKey(text: string, details: MedicationInstructionDetails): string {
@@ -1383,9 +1425,97 @@ function carePlanKey(text: string, details: MedicationInstructionDetails): strin
   ).slice(0, 180);
 }
 
-function carePlanClarificationKey(details: MedicationInstructionDetails): string {
-  const missingFields = getMissingMedicationInstructionFields(details);
-  return `care-plan-missing:${missingFields.join(",") || "none"}:${details.medication || "unknown-medication"}`;
+function isMissingMedicationName(details: MedicationInstructionDetails): boolean {
+  return (
+    !details.medication ||
+    /\b(antibiotic|medication|medicine|tablet|tablets|capsule|capsules|pill|pills|those|that|these|this)\b/i.test(
+      details.medication,
+    )
+  );
+}
+
+function hasMedicationDose(details: MedicationInstructionDetails): boolean {
+  return Boolean(details.dose);
+}
+
+function hasMedicationFrequency(details: MedicationInstructionDetails): boolean {
+  return Boolean(details.frequency || details.interval || details.timing);
+}
+
+function hasCarePlanFollowUp(messages: ConversationMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      message.speaker === "Doctor" &&
+      /\b(follow up|follow-up|come back|return|see me|see us|appointment|schedule|check in|recheck|in (?:one|two|three|four|five|seven|ten|fourteen|\d+)\s*(days?|weeks?|months?)|next week|tomorrow)\b/i.test(
+        message.text,
+      ),
+  );
+}
+
+function hasCarePlanWarningSigns(messages: ConversationMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      message.speaker === "Doctor" &&
+      /\b(warning signs?|urgent care|emergency|er|seek care|call|worse|worsening|fever|chest pain|shortness of breath|difficulty breathing|faint|confusion|severe|rash|swelling)\b/i.test(
+        message.text,
+      ),
+  );
+}
+
+function getCarePlanClarificationQuestion(
+  missingFields: string[],
+  instruction: string,
+  messages: ConversationMessage[],
+  handledCarePlanKeys?: Set<string>,
+): string | null {
+  const cleanInstruction = normalizeTranscriptText(instruction);
+  const askOnce = (key: string, question: string) => {
+    if (handledCarePlanKeys?.has(key)) return null;
+    handledCarePlanKeys?.add(key);
+    return question;
+  };
+
+  if (missingFields.includes("medication name")) {
+    const key = "care-plan-ask:medication-name";
+    if (/\bantibiotics?\b/i.test(cleanInstruction)) {
+      return askOnce(key, "Doctor, could you confirm the antibiotic name?");
+    }
+    return askOnce(key, "Doctor, could you confirm the medication name?");
+  }
+
+  if (missingFields.includes("dosage")) {
+    return askOnce("care-plan-ask:dosage", "Doctor, could you confirm the dose?");
+  }
+
+  if (missingFields.includes("frequency")) {
+    return askOnce(
+      "care-plan-ask:frequency",
+      "Doctor, could you confirm how often the patient should take it?",
+    );
+  }
+
+  if (missingFields.includes("duration")) {
+    return askOnce(
+      "care-plan-ask:duration",
+      "Doctor, could you confirm how many days the patient should take it?",
+    );
+  }
+
+  if (!hasCarePlanFollowUp(messages)) {
+    return askOnce(
+      "care-plan-ask:follow-up",
+      "Doctor, when would you like the patient to schedule a follow-up appointment?",
+    );
+  }
+
+  if (!hasCarePlanWarningSigns(messages)) {
+    return askOnce(
+      "care-plan-ask:warning-signs",
+      "Doctor, are there any warning signs the patient should watch for?",
+    );
+  }
+
+  return null;
 }
 
 function buildCarePlanAcknowledgement(
@@ -1393,43 +1523,31 @@ function buildCarePlanAcknowledgement(
   messages: ConversationMessage[],
   handledCarePlanKeys?: Set<string>,
 ): string | null {
-  const instruction = mergeRecentDoctorCarePlan(messages, text);
+  const instruction = collectDoctorCarePlan(messages, mergeRecentDoctorCarePlan(messages, text));
   const details = extractMedicationInstructionDetails(instruction);
   const missingFields = getMissingMedicationInstructionFields(details);
 
-  if (missingFields.length) {
-    const clarificationKey = carePlanClarificationKey(details);
-    if (handledCarePlanKeys?.has(clarificationKey)) return null;
-    handledCarePlanKeys?.add(clarificationKey);
-
-    const cleanInstruction = normalizeTranscriptText(instruction);
-    const morningEvening =
-      /\bmorning\b/i.test(cleanInstruction) && /\bevening\b/i.test(cleanInstruction);
-    const oneWeek = /\bone week|7 days|seven days\b/i.test(cleanInstruction);
-    if (morningEvening && oneWeek && missingFields.includes("medication name")) {
-      return "Doctor, just to confirm, what is the medication name for the one tablet in the morning and one tablet in the evening for seven days?";
-    }
-
-    if (missingFields.includes("medication name") && missingFields.includes("duration")) {
-      return "Doctor, could you confirm the medication name and how many days the patient should take it?";
-    }
-    if (missingFields.includes("medication name")) {
-      return "Doctor, could you confirm the medication name for the patient?";
-    }
-    return "Doctor, could you confirm how many days the patient should take this medication?";
-  }
-
   const hasUsableInstruction =
+    Boolean(details.medication) ||
     Boolean(details.dose) ||
     Boolean(details.frequency) ||
     Boolean(details.interval) ||
-    Boolean(details.timing);
+    Boolean(details.timing) ||
+    /\b(antibiotics?|tablet|capsule|pill|take|use|continue|finish)\b/i.test(instruction);
   if (!hasUsableInstruction) return null;
+
+  const clarification = getCarePlanClarificationQuestion(
+    missingFields,
+    instruction,
+    messages,
+    handledCarePlanKeys,
+  );
+  if (clarification) return clarification;
 
   const key = carePlanKey(instruction, details);
   if (handledCarePlanKeys?.has(key)) return null;
   handledCarePlanKeys?.add(key);
-  return "Understood, Doctor. I've updated the patient's care plan.";
+  return "Thank you, Doctor. I’ve updated the patient’s care plan.";
 }
 
 const AI = {
@@ -1516,11 +1634,14 @@ function buildIntentResponse(
   approvedPreVisitSummary?: string,
 ): string | null {
   switch (intent) {
-    case "patient_history_request":
-      return (
+    case "patient_history_request": {
+      const currentContextResponse =
         buildMissingApprovedContextResponse(text, state) ||
-        buildDoctorPatientContextAnswer(state, approvedPreVisitSummary)
-      );
+        buildDoctorPatientContextAnswer(state, approvedPreVisitSummary);
+      return shouldIncludePreviousVisitHistory(text)
+        ? `${currentContextResponse}\n\n${buildPreviousVisitHistorySection(state)}`
+        : currentContextResponse;
+    }
     case "medication_history_request":
       return `Yes, Doctor. On Vasanthi's behalf, here is the medication context I found: ${getLastMedicationText(state)}`;
     case "sleep_history_request":
@@ -2125,7 +2246,17 @@ function buildSpokenVisitSummary(summary: VisitSummaryData): string {
 
 export function DoctorPage() {
   const state = useApp();
-  const { profile, meds, doses, symptoms, appointments, addSummary, addVisit, addNote } = state;
+  const {
+    profile,
+    meds,
+    doses,
+    symptoms,
+    appointments,
+    addSummary,
+    addVisit,
+    addNote,
+    resetCurrentPatientContext,
+  } = state;
   const [mounted, setMounted] = useState(false);
   const [stage, setStage] = useState<DemoStage>("idle");
   const [patientSummaryApproved, setPatientSummaryApproved] = useState(false);
@@ -2306,17 +2437,20 @@ export function DoctorPage() {
 
     const textToSpeak = unsaidMessages.map((message) => message.text).join(" ");
     voiceSpeakingRef.current = true;
-    recognitionRef.current?.stop();
-    setVoiceListening(false);
     setVoiceSpeaking(true);
+    const returnToListening = () => {
+      voiceSpeakingRef.current = false;
+      setVoiceSpeaking(false);
+      if (stage === "active" && doctorVisitConsent === "granted") {
+        setWakeStatus("MedsBuddy is listening");
+      }
+    };
     void speak(textToSpeak, () => {
-      voiceSpeakingRef.current = false;
-      setVoiceSpeaking(false);
+      returnToListening();
     }).catch(() => {
-      voiceSpeakingRef.current = false;
-      setVoiceSpeaking(false);
+      returnToListening();
     });
-  }, [medsBuddyTalking, stage, visitMessages]);
+  }, [doctorVisitConsent, medsBuddyTalking, stage, visitMessages]);
 
   const handleDoctorConsents = () => {
     const openingMessages = buildVisitOpeningMessages();
@@ -2728,7 +2862,27 @@ export function DoctorPage() {
   const queueTranscriptChunk = useCallback(
     (transcript: string) => {
       const cleanedChunk = cleanSpeechToTextTranscript(transcript);
-      if (!cleanedChunk || isLowValueTranscript(cleanedChunk)) return;
+      if (!cleanedChunk) return;
+
+      if (voiceSpeakingRef.current) {
+        if (isStopTalkingCommand(cleanedChunk)) {
+          stopSpeaking();
+          voiceSpeakingRef.current = false;
+          setVoiceSpeaking(false);
+          setMedsBuddyTalking(false);
+          medsBuddyTalkingRef.current = false;
+          transcriptBufferRef.current = "";
+          transcriptBufferStartedAtRef.current = null;
+          if (transcriptBufferTimerRef.current) {
+            clearTimeout(transcriptBufferTimerRef.current);
+            transcriptBufferTimerRef.current = null;
+          }
+          setWakeStatus("MedsBuddy Talking is OFF. Still listening and capturing the visit.");
+        }
+        return;
+      }
+
+      if (isLowValueTranscript(cleanedChunk)) return;
 
       if (!transcriptBufferRef.current) {
         transcriptBufferStartedAtRef.current = Date.now();
@@ -2833,12 +2987,7 @@ export function DoctorPage() {
       }
     };
 
-    if (
-      stage !== "active" ||
-      doctorVisitConsent !== "granted" ||
-      voiceSpeaking ||
-      voiceSpeakingRef.current
-    ) {
+    if (stage !== "active" || doctorVisitConsent !== "granted") {
       stopElevenLabsRecorder();
       stopBrowserRecognition();
       setVoiceListening(false);
@@ -2921,7 +3070,7 @@ export function DoctorPage() {
         transcriptBufferTimerRef.current = null;
       }
     };
-  }, [doctorVisitConsent, mounted, queueTranscriptChunk, stage, voiceSpeaking]);
+  }, [doctorVisitConsent, mounted, queueTranscriptChunk, stage]);
 
   const endVisit = async () => {
     flushBufferedTranscript();
@@ -2975,6 +3124,7 @@ export function DoctorPage() {
       }).catch(() => {
         toast.error("Could not save visit memory to Alibaba ECS.");
       });
+      resetCurrentPatientContext();
       setSummarySaved(true);
     }
 

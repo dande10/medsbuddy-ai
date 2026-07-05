@@ -931,9 +931,12 @@ function TalkThreadPage() {
     const currentThreadBeforeUpdate = stateBeforeContextUpdate.threads.find(
       (candidate) => candidate.id === thread.id,
     );
+    const currentVisitStartedAt =
+      stateBeforeContextUpdate.patientContext.currentVisitStartedAt ?? 0;
     const recentUserMessages =
-      currentThreadBeforeUpdate?.messages.filter((message) => message.role === "user").slice(-8) ??
-      [];
+      currentThreadBeforeUpdate?.messages
+        .filter((message) => message.role === "user" && message.at >= currentVisitStartedAt)
+        .slice(-8) ?? [];
     const localPatientContext = extractLocalPatientContext(text, recentUserMessages);
 
     const symp = looksLikeSymptom(text);
@@ -960,11 +963,15 @@ function TalkThreadPage() {
     if (patientContextExtractionAvailableRef.current && isMeaningfulPatientContextMessage(text)) {
       const state = useApp.getState();
       const current = state.threads.find((candidate) => candidate.id === thread.id);
+      const currentVisitStartedAt = state.patientContext.currentVisitStartedAt ?? 0;
       const conversation = [
-        ...(current?.messages ?? []).slice(-10).map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
+        ...(current?.messages ?? [])
+          .filter((message) => message.at >= currentVisitStartedAt)
+          .slice(-10)
+          .map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
         { role: "user" as const, content: text },
       ];
       void extractPatientContext({
