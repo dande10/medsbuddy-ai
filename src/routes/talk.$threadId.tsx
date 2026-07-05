@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { MicButton } from "@/components/mic-button";
 import { AiOrb } from "@/components/ai-orb";
-import { useApp, type ChatMessage } from "@/lib/store";
+import { useApp, type ChatMessage, type PatientContext } from "@/lib/store";
 import {
   detectNavigationIntent,
   isHighConfidenceNavigation,
@@ -114,6 +114,93 @@ function isMeaningfulPatientContextMessage(text: string): boolean {
   return /\b(doctor|visit|symptom|pain|burn|burning|urin|pee|uti|itch|itching|medication|medicine|dose|vitamin|started|yesterday|today|concern|worried|question|ask)\b/i.test(
     text,
   );
+}
+
+function normalizeClinicalText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getClinicalKeywords(text: string): string[] {
+  const stopWords = new Set([
+    "about",
+    "concern",
+    "concerns",
+    "discomfort",
+    "possible",
+    "patient",
+    "symptom",
+    "symptoms",
+    "while",
+    "with",
+  ]);
+  return normalizeClinicalText(text)
+    .split(" ")
+    .filter((word) => word.length >= 4 && !stopWords.has(word));
+}
+
+function clinicalTextMentionsItem(text: string, item: string): boolean {
+  const cleanText = normalizeClinicalText(text);
+  const cleanItem = normalizeClinicalText(item);
+  if (!cleanText || !cleanItem) return false;
+  if (cleanText.includes(cleanItem)) return true;
+  if (isUtiRelatedText(item) && isUtiRelatedText(text)) return true;
+  if (/\bmemory|forget|remember|recall|confus/i.test(item)) {
+    return /\bmemory|forget|remember|recall|confus/i.test(text);
+  }
+
+  const keywords = getClinicalKeywords(item);
+  if (!keywords.length) return false;
+  const matches = keywords.filter((word) => cleanText.includes(word)).length;
+  return matches >= Math.min(2, keywords.length);
+}
+
+function getCurrentVisitConversationText(
+  state: ReturnType<typeof useApp.getState>,
+  extraText = "",
+): string {
+  const currentVisitStartedAt = state.patientContext.currentVisitStartedAt ?? 0;
+  const currentMessages = state.threads.flatMap((thread) =>
+    thread.messages
+      .filter((message) => message.role === "user" && message.at >= currentVisitStartedAt)
+      .map((message) => message.content),
+  );
+  return [...currentMessages, extraText].join(" ");
+}
+
+function getSavedVisitSummaryText(state: ReturnType<typeof useApp.getState>): string {
+  return [
+    ...state.visits.flatMap((visit) => [
+      visit.summary,
+      visit.patientSummary,
+      visit.topicsDiscussed,
+      visit.diagnosisOrConcerns,
+      visit.notes,
+    ]),
+    ...state.summaries.map((summary) => summary.text),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function filterCurrentVisitPatientContext(
+  context: Partial<Omit<PatientContext, "updatedAt">>,
+  state: ReturnType<typeof useApp.getState>,
+  latestText = "",
+): Partial<Omit<PatientContext, "updatedAt">> {
+  const currentConversationText = getCurrentVisitConversationText(state, latestText);
+  const savedVisitSummaryText = getSavedVisitSummaryText(state);
+
+  return {
+    ...context,
+    symptoms: context.symptoms?.filter((symptom) => {
+      if (clinicalTextMentionsItem(currentConversationText, symptom)) return true;
+      return !clinicalTextMentionsItem(savedVisitSummaryText, symptom);
+    }),
+  };
 }
 
 function getPatientIdForContext(state: ReturnType<typeof useApp.getState>): string {
@@ -544,6 +631,14 @@ function TalkThreadPage() {
   const patientContextExtractionAvailableRef = useRef(true);
   const { offline } = useConnectivity();
 
+  const updateCurrentVisitPatientContext = (
+    context: Partial<Omit<PatientContext, "updatedAt">>,
+    latestText = "",
+  ) => {
+    const state = useApp.getState();
+    return updatePatientContext(filterCurrentVisitPatientContext(context, state, latestText));
+  };
+
   // Mark this thread active when it loads
   useEffect(() => {
     if (thread) setActiveThread(thread.id);
@@ -700,7 +795,7 @@ function TalkThreadPage() {
         }
 
         if (savedMeds.length) {
-          updatePatientContext({ medications: savedMeds });
+          updateCurrentVisitPatientContext({ medications: savedMeds }, text);
           const updated = useApp.getState().patientContext.medications;
           reply =
             "I've updated your medication list and will include this in today's doctor visit.";
@@ -747,13 +842,16 @@ function TalkThreadPage() {
         }
 
         if (savedSymptoms.length) {
-          updatePatientContext({
-            symptoms: savedSymptoms,
-            visitReason: stringValue(data.visitReason || data.reasonForVisit),
-            onset: stringValue(data.onset),
-            duration: stringValue(data.duration),
-            patientNotes: [stringValue(data.notes)].filter(Boolean),
-          });
+          updateCurrentVisitPatientContext(
+            {
+              symptoms: savedSymptoms,
+              visitReason: stringValue(data.visitReason || data.reasonForVisit),
+              onset: stringValue(data.onset),
+              duration: stringValue(data.duration),
+              patientNotes: [stringValue(data.notes)].filter(Boolean),
+            },
+            text,
+          );
           reply =
             "I've updated your health summary and will include these symptoms in today's doctor visit.";
         }
@@ -792,15 +890,18 @@ function TalkThreadPage() {
         const timeline = stringValue(data.timeline || data.onset || data.duration);
         const patientNotes = unique(arrayValue(data.patientNotes).map((item) => stringValue(item)));
 
-        updatePatientContext({
-          symptoms: prepSymptoms,
-          visitReason,
-          onset: stringValue(data.onset),
-          duration: stringValue(data.duration || data.timeline),
-          patientNotes,
-          concerns,
-          questionsForDoctor,
-        });
+        updateCurrentVisitPatientContext(
+          {
+            symptoms: prepSymptoms,
+            visitReason,
+            onset: stringValue(data.onset),
+            duration: stringValue(data.duration || data.timeline),
+            patientNotes,
+            concerns,
+            questionsForDoctor,
+          },
+          text,
+        );
         addDoctorVisitPrep({
           reasonForVisit: visitReason,
           symptoms: prepSymptoms,
@@ -957,7 +1058,7 @@ function TalkThreadPage() {
     }
 
     if (localPatientContext) {
-      updatePatientContext(localPatientContext);
+      updateCurrentVisitPatientContext(localPatientContext, text);
     }
 
     if (patientContextExtractionAvailableRef.current && isMeaningfulPatientContextMessage(text)) {
@@ -979,7 +1080,7 @@ function TalkThreadPage() {
         conversation,
       })
         .then((result) => {
-          updatePatientContext(result.patientContext);
+          updateCurrentVisitPatientContext(result.patientContext, text);
         })
         .catch((error) => {
           const message = error instanceof Error ? error.message : String(error);

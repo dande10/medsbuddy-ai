@@ -133,6 +133,22 @@ class ClarificationCheckRequest(BaseModel):
     alreadyAskedTopics: list[str] = Field(default_factory=list)
 
 
+class CarePlanGapRequest(BaseModel):
+    patientId: str = Field(..., min_length=1)
+    carePlanText: str = Field(..., min_length=1)
+    transcript: str = ""
+    patientContext: str = ""
+    medicationHistory: str = ""
+    alreadyAskedFields: list[str] = Field(default_factory=list)
+    localMedicationComplete: bool = False
+    localMedicationNameComplete: bool = False
+    localDosageComplete: bool = False
+    localFrequencyComplete: bool = False
+    localDurationComplete: bool = False
+    localFollowUpComplete: bool = False
+    localWarningSignsComplete: bool = False
+
+
 class ChatRequest(BaseModel):
     messages: list[dict[str, str]] = Field(..., min_length=1)
 
@@ -650,6 +666,56 @@ async def clarification_check(req: ClarificationCheckRequest) -> dict[str, Any]:
         "patientId": req.patientId,
         "qwen": get_qwen_config()["model"],
         "result": parse_qwen_json(reply, "clarification_check"),
+    }
+
+
+@app.post("/api/medsbuddy/care-plan-gap")
+async def care_plan_gap(req: CarePlanGapRequest) -> dict[str, Any]:
+    logger.info("Alibaba ECS API called: care-plan-gap")
+    reply = await qwen_chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "You are MedsBuddy, an AI Patient Advocate. Identify what is still missing "
+                    "from the doctor's care plan. Check only these fields: medication name, dosage, "
+                    "frequency, duration, follow-up, warning signs. Do not ask about a medication "
+                    "field that is already complete. If medication name, dosage, frequency, and "
+                    "duration are complete, ask about warning signs or follow-up timing instead. "
+                    "If the doctor said antibiotics without a medication name, ask exactly: "
+                    "'Doctor, could you confirm the antibiotic name?' Ask only one useful question. "
+                    "If all fields are complete, acknowledge that the care plan is updated. "
+                    "Return JSON only with keys missingFields, nextField, question, allComplete, reason."
+                ),
+            },
+            {
+                "role": "user",
+                "content": "\n\n".join(
+                    [
+                        f"Patient ID: {req.patientId}",
+                        f"Care plan text:\n{req.carePlanText}",
+                        f"Current visit transcript:\n{req.transcript or 'Not provided.'}",
+                        f"Patient context:\n{req.patientContext or 'Not provided.'}",
+                        f"Medication history:\n{req.medicationHistory or 'Not provided.'}",
+                        f"Already asked fields: {', '.join(req.alreadyAskedFields) or 'None'}",
+                        "Local field detection:",
+                        f"- medication complete: {req.localMedicationComplete}",
+                        f"- medication name complete: {req.localMedicationNameComplete}",
+                        f"- dosage complete: {req.localDosageComplete}",
+                        f"- frequency complete: {req.localFrequencyComplete}",
+                        f"- duration complete: {req.localDurationComplete}",
+                        f"- follow-up complete: {req.localFollowUpComplete}",
+                        f"- warning signs complete: {req.localWarningSignsComplete}",
+                    ]
+                ),
+            },
+        ],
+        max_tokens=260,
+    )
+    return {
+        "patientId": req.patientId,
+        "qwen": get_qwen_config()["model"],
+        "result": parse_qwen_json(reply, "care_plan_gap"),
     }
 
 

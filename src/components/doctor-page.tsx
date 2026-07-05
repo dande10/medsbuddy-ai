@@ -1,12 +1,14 @@
 import { useApp, adherence } from "@/lib/store";
 import { speak, stopSpeaking } from "@/lib/voice";
 import {
+  analyzeCarePlanGaps,
   analyzeTranscript,
   generateDoctorHandoff,
   generateVisitSummary,
   humanizePreVisitSummary,
   saveVisitMemory,
   transcribeAudio,
+  type CarePlanGapResult,
   type StructuredVisitSummary,
 } from "@/lib/alibaba-api";
 import {
@@ -68,19 +70,22 @@ function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string 
   const last7 = Date.now() - 7 * 86400000;
   const taken = doses.filter((d) => d.at >= last7 && d.status === "taken").length;
   const missed = doses.filter((d) => d.at >= last7 && d.status !== "taken").length;
-  const structuredContext = {
-    symptoms: [],
-    medications: [],
-    visitReason: "",
-    onset: "",
-    duration: "",
-    patientNotes: [],
-    concerns: [],
-    questionsForDoctor: [],
-    pregnancyContext: "",
-    updatedAt: null,
-    ...(patientContext ?? {}),
-  };
+  const structuredContext = filterCurrentVisitPreVisitContext(
+    {
+      symptoms: [],
+      medications: [],
+      visitReason: "",
+      onset: "",
+      duration: "",
+      patientNotes: [],
+      concerns: [],
+      questionsForDoctor: [],
+      pregnancyContext: "",
+      updatedAt: null,
+      ...(patientContext ?? {}),
+    },
+    state,
+  );
   const medicationHistory =
     doses.length === 0
       ? "I don't have enough recent medication information yet."
@@ -114,17 +119,20 @@ function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string 
 
 function buildReadablePreVisitFallback(state: ReturnType<typeof useApp.getState>): string {
   const { profile, meds, patientContext } = state;
-  const rawContext = {
-    symptoms: [],
-    medications: [],
-    visitReason: "",
-    onset: "",
-    duration: "",
-    patientNotes: [],
-    concerns: [],
-    questionsForDoctor: [],
-    ...(patientContext ?? {}),
-  };
+  const rawContext = filterCurrentVisitPreVisitContext(
+    {
+      symptoms: [],
+      medications: [],
+      visitReason: "",
+      onset: "",
+      duration: "",
+      patientNotes: [],
+      concerns: [],
+      questionsForDoctor: [],
+      ...(patientContext ?? {}),
+    },
+    state,
+  );
   const context = normalizePreVisitContext(rawContext, meds);
   const sections = [
     "Before today's appointment, here's what I'll share with your doctor after your approval.",
@@ -183,6 +191,116 @@ type PreVisitContextLike = {
   pregnancyContext?: string;
   updatedAt?: number | null;
 };
+
+function normalizeClinicalTextForVisit(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getClinicalKeywordsForVisit(text: string): string[] {
+  const stopWords = new Set([
+    "about",
+    "concern",
+    "concerns",
+    "discomfort",
+    "possible",
+    "patient",
+    "symptom",
+    "symptoms",
+    "while",
+    "with",
+  ]);
+  return normalizeClinicalTextForVisit(text)
+    .split(" ")
+    .filter((word) => word.length >= 4 && !stopWords.has(word));
+}
+
+function currentTalkMentionsClinicalItem(text: string, item: string): boolean {
+  const cleanText = normalizeClinicalTextForVisit(text);
+  const cleanItem = normalizeClinicalTextForVisit(item);
+  if (!cleanText || !cleanItem) return false;
+  if (cleanText.includes(cleanItem)) return true;
+  if (isUtiRelatedVisitText(item) && isUtiRelatedVisitText(text)) return true;
+  if (/\bmemory|forget|remember|recall|confus/i.test(item)) {
+    return /\bmemory|forget|remember|recall|confus/i.test(text);
+  }
+
+  const keywords = getClinicalKeywordsForVisit(item);
+  if (!keywords.length) return false;
+  const matches = keywords.filter((word) => cleanText.includes(word)).length;
+  return matches >= Math.min(2, keywords.length);
+}
+
+function isUtiRelatedVisitText(text: string): boolean {
+  return /\buti\b|urinary tract infection|urinary infection|burning while urinating|discomfort while urinating|burning or discomfort while urinating|urinating|urination|pee|peeing/i.test(
+    text,
+  );
+}
+
+function getCurrentTalkConversationText(state: ReturnType<typeof useApp.getState>): string {
+  const currentVisitStartedAt = state.patientContext.currentVisitStartedAt ?? 0;
+  const activeThread = state.threads.find((thread) => thread.id === state.activeThreadId);
+  const threads = activeThread ? [activeThread] : state.threads.slice(0, 1);
+  return threads
+    .flatMap((thread) =>
+      thread.messages
+        .filter((message) => message.role === "user" && message.at >= currentVisitStartedAt)
+        .map((message) => message.content),
+    )
+    .join(" ");
+}
+
+function getSavedVisitSummaryTextForVisit(state: ReturnType<typeof useApp.getState>): string {
+  return [
+    ...state.visits.flatMap((visit) => [
+      visit.summary,
+      visit.patientSummary,
+      visit.topicsDiscussed,
+      visit.diagnosisOrConcerns,
+      visit.notes,
+    ]),
+    ...state.summaries.map((summary) => summary.text),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function filterCurrentVisitPreVisitContext(
+  context: PreVisitContextLike,
+  state: ReturnType<typeof useApp.getState>,
+): PreVisitContextLike {
+  const currentTalkText = getCurrentTalkConversationText(state);
+  const historyText = getSavedVisitSummaryTextForVisit(state);
+  const keepCurrentField = (value: string) => {
+    if (!value.trim()) return "";
+    if (currentTalkMentionsClinicalItem(currentTalkText, value)) return value;
+    if (currentTalkText.trim() && !currentTalkMentionsClinicalItem(historyText, value))
+      return value;
+    return "";
+  };
+  const keepCurrentList = (values: string[]) =>
+    values.filter((value) => {
+      if (currentTalkMentionsClinicalItem(currentTalkText, value)) return true;
+      if (currentTalkText.trim() && !currentTalkMentionsClinicalItem(historyText, value)) {
+        return true;
+      }
+      return false;
+    });
+
+  return {
+    ...context,
+    symptoms: keepCurrentList(context.symptoms),
+    visitReason: keepCurrentField(context.visitReason),
+    onset: keepCurrentField(context.onset),
+    duration: keepCurrentField(context.duration),
+    patientNotes: keepCurrentList(context.patientNotes),
+    concerns: keepCurrentList(context.concerns),
+    questionsForDoctor: keepCurrentList(context.questionsForDoctor),
+  };
+}
 
 function normalizePreVisitContext(
   context: PreVisitContextLike,
@@ -674,6 +792,18 @@ function lastMedsBuddyQuestionWasForDoctor(messages: ConversationMessage[]): boo
   );
 }
 
+function lastMedsBuddyQuestionWasForPatient(messages: ConversationMessage[]): boolean {
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage?.speaker !== "MedsBuddy") return false;
+  if (!/\?/.test(lastMessage.text)) return false;
+  return (
+    /\b(vasanthi|patient)\b/i.test(lastMessage.text) &&
+    /\b(what|when|how|which|can you|could you|do you|are you|would you|confirm|tell me)\b/i.test(
+      lastMessage.text,
+    )
+  );
+}
+
 function looksLikePatientFirstPersonStatement(text: string): boolean {
   const clean = normalizeTranscriptText(text);
   return (
@@ -740,6 +870,18 @@ function classifySpeakerFromTranscript(
     .filter((message) => message.speaker === "Doctor" || message.speaker === "Patient");
   const recentHumanMessage = recentHumanMessages[0];
   const previousHumanMessage = recentHumanMessages[1];
+
+  if (
+    lastMedsBuddyQuestionWasForPatient(existingMessages) &&
+    looksLikePatientFirstPersonStatement(text)
+  ) {
+    return {
+      speaker: "Patient",
+      confidence: 0.97,
+      reason: "MedsBuddy just asked the patient a clarification question.",
+      source: "local_rules",
+    };
+  }
 
   // If MedsBuddy just asked the doctor a clarification question, the next clinical answer
   // is usually the doctor. This fixes lines like "Yes, seek immediate medical attention"
@@ -1338,6 +1480,22 @@ type MedicationInstructionDetails = {
   duration: string;
   interval: string;
 };
+type CarePlanField =
+  | "medication name"
+  | "dosage"
+  | "frequency"
+  | "duration"
+  | "follow-up"
+  | "warning signs";
+type CarePlanCompletion = {
+  medicationComplete: boolean;
+  medicationNameComplete: boolean;
+  dosageComplete: boolean;
+  frequencyComplete: boolean;
+  durationComplete: boolean;
+  followUpComplete: boolean;
+  warningSignsComplete: boolean;
+};
 
 function mergeRecentDoctorCarePlan(messages: ConversationMessage[], fallbackText: string): string {
   const merged: string[] = [];
@@ -1442,6 +1600,26 @@ function hasMedicationFrequency(details: MedicationInstructionDetails): boolean 
   return Boolean(details.frequency || details.interval || details.timing);
 }
 
+function getCarePlanCompletion(
+  details: MedicationInstructionDetails,
+  messages: ConversationMessage[],
+): CarePlanCompletion {
+  const medicationNameComplete = !isMissingMedicationName(details);
+  const dosageComplete = hasMedicationDose(details);
+  const frequencyComplete = hasMedicationFrequency(details);
+  const durationComplete = Boolean(details.duration);
+  return {
+    medicationComplete:
+      medicationNameComplete && dosageComplete && frequencyComplete && durationComplete,
+    medicationNameComplete,
+    dosageComplete,
+    frequencyComplete,
+    durationComplete,
+    followUpComplete: hasCarePlanFollowUp(messages),
+    warningSignsComplete: hasCarePlanWarningSigns(messages),
+  };
+}
+
 function hasCarePlanFollowUp(messages: ConversationMessage[]): boolean {
   return messages.some(
     (message) =>
@@ -1460,6 +1638,63 @@ function hasCarePlanWarningSigns(messages: ConversationMessage[]): boolean {
         message.text,
       ),
   );
+}
+
+function normalizeCarePlanField(field: unknown): CarePlanField | null {
+  const clean = String(field ?? "")
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .trim();
+  if (/medication.*name|antibiotic.*name|drug.*name/.test(clean)) return "medication name";
+  if (/dosage|dose|amount/.test(clean)) return "dosage";
+  if (/frequency|how often|timing|schedule/.test(clean)) return "frequency";
+  if (/duration|how long|days|course/.test(clean)) return "duration";
+  if (/follow/.test(clean)) return "follow-up";
+  if (/warning|urgent|emergency|watch/.test(clean)) return "warning signs";
+  return null;
+}
+
+function carePlanFieldIsComplete(field: CarePlanField, completion: CarePlanCompletion): boolean {
+  switch (field) {
+    case "medication name":
+      return completion.medicationNameComplete;
+    case "dosage":
+      return completion.dosageComplete;
+    case "frequency":
+      return completion.frequencyComplete;
+    case "duration":
+      return completion.durationComplete;
+    case "follow-up":
+      return completion.followUpComplete;
+    case "warning signs":
+      return completion.warningSignsComplete;
+  }
+}
+
+function carePlanFieldFromQuestion(question: string): CarePlanField | null {
+  if (/antibiotic name|medication name|which medication|what medication/i.test(question)) {
+    return "medication name";
+  }
+  if (/\bdose|dosage|mg|how much/i.test(question)) return "dosage";
+  if (/how often|frequency|when should|what time|timing/i.test(question)) return "frequency";
+  if (/how many days|how long|duration|course/i.test(question)) return "duration";
+  if (/follow[-\s]?up|come back|return|appointment/i.test(question)) return "follow-up";
+  if (/warning signs?|urgent|emergency|watch for|seek care/i.test(question)) {
+    return "warning signs";
+  }
+  return null;
+}
+
+function getAskedCarePlanFields(handledCarePlanKeys?: Set<string>): CarePlanField[] {
+  if (!handledCarePlanKeys) return [];
+  return Array.from(handledCarePlanKeys)
+    .map((key) => key.match(/^care-plan-ask:(.+)$/)?.[1])
+    .map(normalizeCarePlanField)
+    .filter(Boolean) as CarePlanField[];
+}
+
+function markCarePlanFieldAsked(field: CarePlanField, handledCarePlanKeys?: Set<string>): void {
+  handledCarePlanKeys?.add(`care-plan-ask:${field}`);
 }
 
 function getCarePlanClarificationQuestion(
@@ -1548,6 +1783,96 @@ function buildCarePlanAcknowledgement(
   if (handledCarePlanKeys?.has(key)) return null;
   handledCarePlanKeys?.add(key);
   return "Thank you, Doctor. I’ve updated the patient’s care plan.";
+}
+
+function buildValidatedCarePlanGapResponse(
+  result: CarePlanGapResult | undefined,
+  instruction: string,
+  completion: CarePlanCompletion,
+  handledCarePlanKeys?: Set<string>,
+): string | null {
+  if (!result) return null;
+  if (result.allComplete) {
+    const locallyComplete =
+      completion.medicationComplete &&
+      completion.followUpComplete &&
+      completion.warningSignsComplete;
+    return locallyComplete ? "Thank you, Doctor. I’ve updated the patient’s care plan." : null;
+  }
+
+  const question = result.question?.trim();
+  if (!question) return null;
+
+  const requestedField =
+    normalizeCarePlanField(result.nextField) || carePlanFieldFromQuestion(question);
+  if (!requestedField) return null;
+  if (carePlanFieldIsComplete(requestedField, completion)) return null;
+  if (getAskedCarePlanFields(handledCarePlanKeys).includes(requestedField)) return null;
+
+  if (requestedField === "medication name" && /\bantibiotics?\b/i.test(instruction)) {
+    markCarePlanFieldAsked(requestedField, handledCarePlanKeys);
+    return "Doctor, could you confirm the antibiotic name?";
+  }
+
+  markCarePlanFieldAsked(requestedField, handledCarePlanKeys);
+  return question;
+}
+
+async function buildCarePlanResponseWithQwen({
+  text,
+  messages,
+  state,
+  patientContext,
+  handledCarePlanKeys,
+}: {
+  text: string;
+  messages: ConversationMessage[];
+  state: ReturnType<typeof useApp.getState>;
+  patientContext: string;
+  handledCarePlanKeys?: Set<string>;
+}): Promise<string | null> {
+  const instruction = collectDoctorCarePlan(messages, mergeRecentDoctorCarePlan(messages, text));
+  const details = extractMedicationInstructionDetails(instruction);
+  const completion = getCarePlanCompletion(details, messages);
+  const hasUsableInstruction =
+    Boolean(details.medication) ||
+    Boolean(details.dose) ||
+    Boolean(details.frequency) ||
+    Boolean(details.interval) ||
+    Boolean(details.timing) ||
+    /\b(antibiotics?|tablet|capsule|pill|take|use|continue|finish|follow[-\s]?up|warning signs?|urgent care|emergency|watch for|seek care)\b/i.test(
+      instruction,
+    );
+  if (!hasUsableInstruction) return null;
+
+  try {
+    const result = await analyzeCarePlanGaps({
+      patientId: getPatientId(state),
+      carePlanText: instruction,
+      transcript: conversationToTranscript(messages),
+      patientContext,
+      medicationHistory: buildMedicationHistory(state),
+      alreadyAskedFields: getAskedCarePlanFields(handledCarePlanKeys),
+      localMedicationComplete: completion.medicationComplete,
+      localMedicationNameComplete: completion.medicationNameComplete,
+      localDosageComplete: completion.dosageComplete,
+      localFrequencyComplete: completion.frequencyComplete,
+      localDurationComplete: completion.durationComplete,
+      localFollowUpComplete: completion.followUpComplete,
+      localWarningSignsComplete: completion.warningSignsComplete,
+    });
+    const qwenResponse = buildValidatedCarePlanGapResponse(
+      result.result,
+      instruction,
+      completion,
+      handledCarePlanKeys,
+    );
+    if (qwenResponse) return qwenResponse;
+  } catch {
+    // The local care-plan checker below keeps the visit flowing if Qwen is unavailable.
+  }
+
+  return buildCarePlanAcknowledgement(text, messages, handledCarePlanKeys);
 }
 
 const AI = {
@@ -2635,6 +2960,33 @@ export function DoctorPage() {
         return true;
       }
 
+      if (
+        !needsLlmSpeakerClassification &&
+        fastIntent === "care_plan_instruction" &&
+        canMedsBuddyRespondInStage(currentVisitStage, fastIntent)
+      ) {
+        if (!medsBuddyTalkingRef.current) {
+          setWakeStatus("MedsBuddy Talking is OFF. Still listening and capturing the visit.");
+          return true;
+        }
+
+        setWakeStatus("MedsBuddy is checking the care plan for missing details");
+        void buildCarePlanResponseWithQwen({
+          text: latestText,
+          messages: nextMessages,
+          state,
+          patientContext: patientContextForVisit,
+          handledCarePlanKeys: handledCarePlanKeysRef.current,
+        }).then((response) => {
+          if (!response) {
+            setWakeStatus("MedsBuddy is ready for follow-up questions");
+            return;
+          }
+          addMedsBuddyVisitMessage(response, "MedsBuddy is clarifying the care plan");
+        });
+        return true;
+      }
+
       const fastResponse =
         !needsLlmSpeakerClassification &&
         isFastLocalIntent(fastIntent) &&
@@ -2749,13 +3101,19 @@ export function DoctorPage() {
           latestSpeaker === "Doctor" &&
           lastMedsBuddyQuestionWasForDoctor(visitMessagesRef.current) &&
           looksLikeDoctorAnswerToMedsBuddy(latestTurnText);
+        const ignoreDoctorCorrectionAfterMedsBuddyPatientQuestion =
+          correctedSpeaker === "Doctor" &&
+          latestSpeaker === "Patient" &&
+          lastMedsBuddyQuestionWasForPatient(visitMessagesRef.current) &&
+          looksLikePatientFirstPersonStatement(latestTurnText);
 
         if (
           correctedSpeaker &&
           correctedSpeaker !== "MedsBuddy" &&
           latestSpeaker &&
           correctedSpeaker !== latestSpeaker &&
-          !ignorePatientCorrectionAfterMedsBuddyQuestion
+          !ignorePatientCorrectionAfterMedsBuddyQuestion &&
+          !ignoreDoctorCorrectionAfterMedsBuddyPatientQuestion
         ) {
           setVisitMessages((messages) => {
             const lastIndex = messages.findLastIndex(
@@ -2775,17 +3133,27 @@ export function DoctorPage() {
         }
 
         const stageAllowsResponse = canMedsBuddyRespondInStage(asyncVisitStage, decision.intent);
-        const localIntentResponse = stageAllowsResponse
-          ? buildIntentResponse(
-              decision.intent,
-              latestText,
-              visitMessagesRef.current,
-              state,
-              handledCarePlanKeysRef.current,
-              patientContextForVisit,
-            )
-          : null;
+        const localIntentResponse =
+          stageAllowsResponse && decision.intent === "care_plan_instruction"
+            ? await buildCarePlanResponseWithQwen({
+                text: latestText,
+                messages: visitMessagesRef.current,
+                state,
+                patientContext: patientContextForVisit,
+                handledCarePlanKeys: handledCarePlanKeysRef.current,
+              })
+            : stageAllowsResponse
+              ? buildIntentResponse(
+                  decision.intent,
+                  latestText,
+                  visitMessagesRef.current,
+                  state,
+                  handledCarePlanKeysRef.current,
+                  patientContextForVisit,
+                )
+              : null;
         const shouldPreferLocalResponse =
+          decision.intent === "care_plan_instruction" ||
           decision.intent === "medication_history_request" ||
           /\b0 percent|zero taken|zero missed\b/i.test(decision.response);
 

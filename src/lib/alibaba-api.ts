@@ -84,6 +84,14 @@ export type AnalyzeTranscriptResult = {
   memoryUsed?: boolean;
 };
 
+export type CarePlanGapResult = {
+  missingFields?: string[];
+  nextField?: string;
+  question?: string;
+  allComplete?: boolean;
+  reason?: string;
+};
+
 export type StructuredVisitSummary = {
   visitSummary?: string;
   diagnosis?: string;
@@ -142,6 +150,24 @@ export function analyzeTranscript(payload: {
     "/api/medsbuddy/analyze-transcript",
     payload,
   );
+}
+
+export function analyzeCarePlanGaps(payload: {
+  patientId: string;
+  carePlanText: string;
+  transcript?: string;
+  patientContext?: string;
+  medicationHistory?: string;
+  alreadyAskedFields?: string[];
+  localMedicationComplete?: boolean;
+  localMedicationNameComplete?: boolean;
+  localDosageComplete?: boolean;
+  localFrequencyComplete?: boolean;
+  localDurationComplete?: boolean;
+  localFollowUpComplete?: boolean;
+  localWarningSignsComplete?: boolean;
+}) {
+  return postJson<MedsBuddyApiResult<CarePlanGapResult>>("/api/medsbuddy/care-plan-gap", payload);
 }
 
 export function generateVisitSummary(payload: {
