@@ -41,6 +41,33 @@ async function postJson<T>(path: string, body: JsonRecord): Promise<T> {
   return (await response.json()) as T;
 }
 
+export async function transcribeAudio(audio: Blob): Promise<{ text: string; rawText?: string }> {
+  const url = medsBuddyApiUrl("/api/stt");
+  const formData = new FormData();
+  const extension = audio.type.includes("mp4") ? "m4a" : "webm";
+  formData.append("audio", audio, `doctor-visit.${extension}`);
+
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 45000);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+
+  if (!response.ok) {
+    const error = await response.text().catch(() => "");
+    throw new Error(error || `ElevenLabs STT failed: ${response.status}`);
+  }
+
+  return (await response.json()) as { text: string; rawText?: string };
+}
+
 export type MedsBuddyApiResult<T> = {
   patientId?: string;
   qwen?: string;
@@ -90,6 +117,7 @@ export type AgentRouterResult = {
     | "add_symptom"
     | "remove_symptom"
     | "add_medication"
+    | "log_dose"
     | "doctor_visit_prep"
     | "navigate"
     | "generate_qr"
@@ -131,6 +159,18 @@ export function generateVisitSummary(payload: {
 export function humanizePreVisitSummary(payload: { patientId: string; rawPatientContext: string }) {
   return postJson<{ patientId: string; qwen?: string; summary: string }>(
     "/api/medsbuddy/humanize-previsit-summary",
+    payload,
+  );
+}
+
+export function generateDoctorHandoff(payload: {
+  patientId: string;
+  approvedPreVisitSummary: string;
+  patientContext?: JsonRecord;
+  medicationHistory?: string;
+}) {
+  return postJson<{ patientId: string; qwen?: string; handoff: string }>(
+    "/api/medsbuddy/doctor-handoff",
     payload,
   );
 }

@@ -2,9 +2,11 @@ import { useApp, adherence } from "@/lib/store";
 import { speak, stopSpeaking } from "@/lib/voice";
 import {
   analyzeTranscript,
+  generateDoctorHandoff,
   generateVisitSummary,
   humanizePreVisitSummary,
   saveVisitMemory,
+  transcribeAudio,
   type StructuredVisitSummary,
 } from "@/lib/alibaba-api";
 import {
@@ -102,6 +104,7 @@ function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string 
         ]
           .filter(Boolean)
           .join("; ") || "Recent medication details are limited.";
+  const preVisitContext = normalizePreVisitContext(structuredContext, meds);
 
   return JSON.stringify(
     {
@@ -112,12 +115,8 @@ function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string 
         allergies: profile.allergies || "",
         conditions: profile.conditions || "",
       },
-      patientContext: structuredContext,
-      savedMedications: meds.map((med) => ({
-        name: med.name,
-        dosage: med.dosage,
-        frequency: med.frequency,
-      })),
+      patientContext: preVisitContext,
+      savedMedications: preVisitContext.medications,
       medicationHistory,
       recentVisitPrepNotes: recentHealthNotes,
       approvedVisitMemories,
@@ -129,7 +128,7 @@ function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string 
 
 function buildReadablePreVisitFallback(state: ReturnType<typeof useApp.getState>): string {
   const { profile, meds, patientContext } = state;
-  const context = {
+  const rawContext = {
     symptoms: [],
     medications: [],
     visitReason: "",
@@ -140,18 +139,15 @@ function buildReadablePreVisitFallback(state: ReturnType<typeof useApp.getState>
     questionsForDoctor: [],
     ...(patientContext ?? {}),
   };
-  const medicationLines = [
-    ...context.medications,
-    ...meds.map((med) =>
-      [med.name, med.dosage, med.frequency].filter(Boolean).join(" ").replace(/\s+/g, " "),
-    ),
-  ].filter(Boolean);
+  const context = normalizePreVisitContext(rawContext, meds);
   const sections = [
-    "Before today's appointment, here's the information I'll share with your doctor after your approval.",
+    "Before today's appointment, here's what I'll share with your doctor after your approval.",
     `This summary is for ${profile.name || "the patient"}.`,
     "",
     "Reason for Visit",
-    context.visitReason ? `- ${context.visitReason}` : "- Not clearly captured yet.",
+    context.visitReason
+      ? `- ${context.visitReason}`
+      : "- Add the main reason for today's visit before sharing with the doctor.",
     "",
     "Current Symptoms",
     ...(context.symptoms.length
@@ -167,8 +163,8 @@ function buildReadablePreVisitFallback(state: ReturnType<typeof useApp.getState>
       : []),
     "",
     "Current Medications",
-    ...(medicationLines.length
-      ? Array.from(new Set(medicationLines)).map((medication) => `- ${medication}`)
+    ...(context.medications.length
+      ? context.medications.map((medication) => `- ${medication}`)
       : ["- I don't have enough recent medication information yet."]),
     ...(context.concerns.length
       ? ["", "Patient Concerns", ...context.concerns.map((concern) => `- ${concern}`)]
@@ -187,6 +183,175 @@ function buildReadablePreVisitFallback(state: ReturnType<typeof useApp.getState>
     ...(profile.conditions ? ["", "Existing Conditions", `- ${profile.conditions}`] : []),
   ];
   return sections.join("\n");
+}
+
+type PreVisitContextLike = {
+  symptoms: string[];
+  medications: string[];
+  visitReason: string;
+  onset: string;
+  duration: string;
+  patientNotes: string[];
+  concerns: string[];
+  questionsForDoctor: string[];
+  pregnancyContext?: string;
+  updatedAt?: number | null;
+};
+
+function normalizePreVisitContext(
+  context: PreVisitContextLike,
+  meds: ReturnType<typeof useApp.getState>["meds"],
+): PreVisitContextLike {
+  const symptoms = normalizePreVisitSymptoms(context.symptoms, context.patientNotes);
+  const visitReason =
+    context.visitReason?.trim() ||
+    deriveReasonForVisit({
+      ...context,
+      symptoms,
+    });
+  const patientNotes = normalizePatientNotes(context.patientNotes, symptoms);
+
+  return {
+    ...context,
+    symptoms,
+    medications: normalizePreVisitMedications([
+      ...context.medications,
+      ...meds.map((med) =>
+        [med.name, med.dosage, med.frequency].filter(Boolean).join(" ").replace(/\s+/g, " "),
+      ),
+    ]),
+    visitReason,
+    patientNotes,
+  };
+}
+
+function deriveReasonForVisit(context: PreVisitContextLike): string {
+  const combined = [
+    ...context.symptoms,
+    ...context.patientNotes,
+    ...context.concerns,
+    context.onset,
+    context.duration,
+  ].join(" ");
+
+  if (
+    /\buti\b|urinary tract infection|urinary infection|burning|discomfort.*urinating|urinating|urination/i.test(
+      combined,
+    )
+  ) {
+    return "Possible urinary tract infection symptoms.";
+  }
+
+  const clinicalDetails = [...context.symptoms, ...context.concerns, ...context.patientNotes]
+    .map((item) =>
+      item
+        .replace(/^possible\s+/i, "")
+        .replace(/\bsymptoms should be discussed with the doctor during the visit\.?$/i, "")
+        .replace(/\.$/, "")
+        .trim(),
+    )
+    .filter(Boolean)
+    .filter((item, index, items) => {
+      const key = normalizeTranscriptText(item);
+      return items.findIndex((candidate) => normalizeTranscriptText(candidate) === key) === index;
+    })
+    .slice(0, 4);
+
+  if (!clinicalDetails.length) return "";
+
+  const [primary, ...related] = clinicalDetails;
+  const relatedText = related.length ? ` with ${formatNaturalList(related)}` : "";
+  const timeline = context.duration || context.onset;
+  const timelineText = timeline
+    ? ` ${timeline
+        .replace(/^started\s*/i, "starting ")
+        .replace(/\.$/, "")
+        .trim()}`
+    : "";
+
+  return `${primary}${relatedText}${timelineText}.`;
+}
+
+function formatNaturalList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+function normalizePreVisitSymptoms(symptoms: string[], notes: string[]): string[] {
+  const combined = [...symptoms, ...notes].join(" ");
+  const output: string[] = [];
+  if (
+    /\buti\b|urinary tract infection|urinary infection|burning|discomfort.*urinating|urinating|urination/i.test(
+      combined,
+    )
+  ) {
+    output.push("Burning or discomfort while urinating.");
+  }
+  for (const symptom of symptoms) {
+    const clean = symptom.trim().replace(/\.$/, "");
+    if (!clean || /uti|urinary|urinating|urination|burning|discomfort/i.test(clean)) continue;
+    output.push(`${clean}.`);
+  }
+  return Array.from(new Set(output));
+}
+
+function normalizePatientNotes(notes: string[], symptoms: string[]): string[] {
+  const output = notes
+    .map((note) => note.trim())
+    .filter(Boolean)
+    .filter((note) => !/burning|discomfort.*urinating|urinating|urination|uti/i.test(note));
+  if (symptoms.length) {
+    output.push("Symptoms should be discussed with the doctor during the visit.");
+  }
+  return Array.from(new Set(output));
+}
+
+function normalizePreVisitMedications(lines: string[]): string[] {
+  const medsByKey = new Map<string, { name: string; frequency: string; dosage: string }>();
+  for (const line of lines) {
+    const parsed = parsePreVisitMedication(line);
+    if (!parsed) continue;
+    const existing = medsByKey.get(parsed.key);
+    medsByKey.set(parsed.key, {
+      name: parsed.name,
+      dosage: existing?.dosage || parsed.dosage,
+      frequency: existing?.frequency || parsed.frequency,
+    });
+  }
+  return Array.from(medsByKey.values()).map((med) => {
+    const suffix = [med.dosage, med.frequency].filter(Boolean).join(" — ");
+    return suffix ? `${med.name} — ${suffix}` : med.name;
+  });
+}
+
+function parsePreVisitMedication(line: string): {
+  key: string;
+  name: string;
+  dosage: string;
+  frequency: string;
+} | null {
+  const clean = line
+    .replace(/\bstandard dose\b/gi, "")
+    .replace(/\bone tablet\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const lower = clean.toLowerCase();
+  const canonical = /\b(prenatal|prenatal vitamin)\b/i.test(lower)
+    ? { key: "prenatal-vitamin", name: "Prenatal vitamin" }
+    : /\b(vitamin\s*b12|b12|vb12)\b/i.test(lower)
+      ? { key: "vitamin-b12", name: "Vitamin B12" }
+      : /\b(vitamin\s*d|vitamin d3|d3)\b/i.test(lower)
+        ? { key: "vitamin-d", name: "Vitamin D" }
+        : null;
+  if (!canonical) return null;
+  const dosage = clean.match(/\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|iu)\b/i)?.[0] ?? "";
+  const frequency = /\btwice\b|\b2 times\b|\btwo times\b/i.test(lower)
+    ? "twice daily"
+    : /\bonce\b|\b1 time\b|\bone time\b|\bdaily\b|\bevery day\b/i.test(lower)
+      ? "once daily"
+      : "";
+  return { ...canonical, dosage, frequency };
 }
 
 function formatSymptomSeverity(severity: number): string {
@@ -309,6 +474,15 @@ const STOP_TALKING_PATTERN =
   /\b(?:meds\s*buddy\s*)?(?:please\s+)?(?:stop talking|do not speak|don't speak|be quiet|stay quiet|stop speaking)\b/i;
 const START_TALKING_PATTERN =
   /\b(?:meds\s*buddy\s*)?(?:please\s+)?(?:start talking|start speaking|you can speak now|speak now|talk now|you may speak)\b/i;
+
+function getSupportedRecordingMimeType(): string {
+  if (typeof MediaRecorder === "undefined") return "";
+  return (
+    ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/mpeg"].find((type) =>
+      MediaRecorder.isTypeSupported(type),
+    ) ?? ""
+  );
+}
 
 function cleanSpeechToTextTranscript(text: string): string {
   let cleaned = text.replace(/\s+/g, " ").trim();
@@ -528,7 +702,7 @@ function looksLikeDoctorHistoryOrPurposeQuestion(text: string): boolean {
   const clean = normalizeTranscriptText(text.replace(WAKE_WORD_PATTERN, " "));
   if (looksLikePatientFirstPersonStatement(clean)) return false;
 
-  return /\b(what symptoms|which symptoms|any symptoms|symptoms today|what medications|what medicines|recent medications|current medications|current meds?|last medication|last medicine|purpose of visit|reason for visit|why are you here|why are you here today|what brings you in|what brings you here|what brought you in|patient history|medical history|medication history|recent history|tell me her history|tell me his history|tell me the history|what has been happening|what happened last visit|allergies|allergic|conditions|diagnoses|previous visits?|last visits?|current concerns?|questions for (?:the )?doctor|medication adherence|adherence|taking.*medication|medications?.*symptoms?|symptoms?.*medications?)\b/i.test(
+  return /\b(can you|could you|give me|tell me|what symptoms|which symptoms|any symptoms|symptoms today|tell me about (?:the )?patient'?s? symptoms|tell me (?:the )?patient'?s? symptoms|what medications|what medicines|current medications|current medicines|current meds?|recent medications|last medication|last medicine|purpose of visit|reason for visit|reason for today'?s? visit|reason for today visit|today'?s? visit reason|today visit reason|what is the reason|what's the reason|what brings|what brought|why are you here|why are you here today|patient history|medical history|medication history|recent history|tell me her history|tell me his history|tell me the history|what has been happening|what happened last visit|any allergies|allergies|allergic|conditions|diagnoses|previous visits?|last visits?|current concerns?|questions for (?:the )?doctor|how long|when did it start|medication adherence|adherence|taking.*medication|medications?.*symptoms?|symptoms?.*medications?)\b/i.test(
     clean,
   );
 }
@@ -538,11 +712,11 @@ function looksLikePatientContextRequest(text: string): boolean {
   if (looksLikePatientFirstPersonStatement(clean)) return false;
 
   const requestCue =
-    /\b(give me|tell me|show me|summari[sz]e|what|which|any|current|list|pull up|do we have|does (?:she|he|the patient)|patient)\b/i.test(
+    /\b(can you|could you|give me|tell me|show me|summari[sz]e|what|which|any|current|list|pull up|do we have|does (?:she|he|the patient)|patient|what brings|how long|reason for today'?s? visit|reason for today visit|today'?s? visit reason|today visit reason)\b/i.test(
       clean,
     );
   const contextCue =
-    /\b(medications?|medicines?|symptoms?|reason for visit|purpose of visit|patient history|medical history|allergies|allergic|conditions?|diagnoses|previous visits?|last visits?|current concerns?|questions for (?:the )?doctor|adherence|dose history|missed doses?)\b/i.test(
+    /\b(medications?|medicines?|current medications?|current medicines?|symptoms?|reason for visit|reason for today'?s? visit|reason for today visit|today'?s? visit|today visit|purpose of visit|what brings|how long|when did it start|patient history|medical history|allergies|allergic|conditions?|diagnoses|previous visits?|last visits?|current concerns?|questions for (?:the )?doctor|adherence|dose history|missed doses?)\b/i.test(
       clean,
     );
 
@@ -593,6 +767,16 @@ function classifySpeakerFromTranscript(
       confidence: 0.96,
       reason:
         "MedsBuddy just asked the doctor a clarification question and this is medical guidance.",
+      source: "local_rules",
+    };
+  }
+
+  if (looksLikePatientContextRequest(text)) {
+    return {
+      speaker: "Doctor",
+      confidence: 0.97,
+      reason:
+        "Doctor-style request for approved patient context such as symptoms, medications, history, allergies, or concerns.",
       source: "local_rules",
     };
   }
@@ -894,40 +1078,216 @@ function buildDoctorPatientContextAnswer(
   state: ReturnType<typeof useApp.getState>,
   approvedPreVisitSummary?: string,
 ): string {
-  const { profile, meds, patientContext, visits } = state;
-  const medicationLines = Array.from(
-    new Set([
-      ...(patientContext.medications ?? []),
-      ...meds.map((med) =>
-        [med.name, med.dosage, med.frequency].filter(Boolean).join(" ").replace(/\s+/g, " "),
-      ),
-    ]),
-  ).filter(Boolean);
-  const symptomLines = Array.from(
-    new Set([
-      ...(patientContext.visitReason ? [patientContext.visitReason] : []),
-      ...(patientContext.symptoms ?? []),
-      ...(patientContext.concerns ?? []),
-    ]),
-  ).filter(Boolean);
-  const contextParts = [
-    `the patient is currently taking ${medicationLines.length ? medicationLines.join(", ") : "no medications listed yet"}`,
-    `current symptoms and concerns include ${symptomLines.length ? symptomLines.join(", ") : "no current symptoms captured yet"}`,
-    patientContext.onset ? `onset: ${patientContext.onset}` : "",
-    patientContext.duration ? `duration: ${patientContext.duration}` : "",
-    profile.allergies ? `allergies: ${profile.allergies}` : "",
-    profile.conditions ? `conditions: ${profile.conditions}` : "",
-    patientContext.questionsForDoctor?.length
-      ? `questions for the doctor: ${patientContext.questionsForDoctor.join(", ")}`
-      : "",
-    visits.length ? `previous visit summary: ${visits[0].summary}` : "",
-  ].filter(Boolean);
+  const { profile, meds, patientContext } = state;
+  const rawContext = {
+    symptoms: [],
+    medications: [],
+    visitReason: "",
+    onset: "",
+    duration: "",
+    patientNotes: [],
+    concerns: [],
+    questionsForDoctor: [],
+    ...(patientContext ?? {}),
+  };
+  const context = normalizePreVisitContext(rawContext, meds);
+  const reason = context.visitReason || "The patient has not approved a reason for today yet.";
+  const symptoms = context.symptoms.length
+    ? context.symptoms
+    : approvedPreVisitSummary
+      ? [approvedPreVisitSummary.replace(/\s+/g, " ").slice(0, 120)]
+      : ["No current symptoms captured yet."];
+  const timeline =
+    context.onset || context.duration
+      ? [
+          context.onset ? `Started ${context.onset.replace(/\.$/, "")}.` : "",
+          context.duration ? context.duration.replace(/\.$/, ".") : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : "";
+  const medications = context.medications.length
+    ? context.medications
+    : ["No current medications are listed yet."];
+  const allergies = profile.allergies
+    ? `Allergies: ${profile.allergies}.`
+    : "No known allergies have been recorded.";
+  const conditions = profile.conditions ? `Conditions: ${profile.conditions}.` : "";
 
-  if (contextParts.length) {
-    return `Yes, Doctor. Based on the approved pre-visit summary, ${contextParts.join(". ")}.`;
+  return [
+    "Yes, Doctor.",
+    "",
+    "Based on the patient's approved pre-visit summary:",
+    "",
+    "Reason for today's visit:",
+    `• ${reason}`,
+    "",
+    "Current symptoms:",
+    ...symptoms.slice(0, 3).map((symptom) => `• ${symptom.replace(/\.$/, ".")}`),
+    ...(timeline ? [`• ${timeline}`] : []),
+    "",
+    "Current medications:",
+    ...medications.slice(0, 4).map((medication) => `• ${medication.replace(/\.$/, ".")}`),
+    "",
+    allergies,
+    conditions,
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+}
+
+type PatientContextRequestField =
+  | "reason for visit"
+  | "symptoms"
+  | "medications"
+  | "allergies"
+  | "medical history"
+  | "duration"
+  | "concerns"
+  | "questions for doctor";
+
+function getRequestedPatientContextFields(text: string): PatientContextRequestField[] {
+  const clean = normalizeTranscriptText(text.replace(WAKE_WORD_PATTERN, " "));
+  const fields = new Set<PatientContextRequestField>();
+
+  if (
+    /\b(reason for visit|reason for today'?s? visit|reason for today visit|today'?s? visit reason|today visit reason|what is the reason|what's the reason|purpose of visit|what brings|what brought|why (?:is|are).*(?:here|in)|chief complaint|main concern)\b/i.test(
+      clean,
+    )
+  ) {
+    fields.add("reason for visit");
+  }
+  if (/\b(symptoms?|pain|complaints?|what is she feeling|what is he feeling)\b/i.test(clean)) {
+    fields.add("symptoms");
+  }
+  if (
+    /\b(medications?|medicines?|current meds?|dose history|adherence|missed doses?)\b/i.test(clean)
+  ) {
+    fields.add("medications");
+  }
+  if (/\b(allergies|allergic)\b/i.test(clean)) {
+    fields.add("allergies");
+  }
+  if (
+    /\b(medical history|patient history|conditions?|diagnoses|previous visits?|last visits?)\b/i.test(
+      clean,
+    )
+  ) {
+    fields.add("medical history");
+  }
+  if (/\b(how long|duration|onset|when did it start|started when|timeline)\b/i.test(clean)) {
+    fields.add("duration");
+  }
+  if (/\b(concerns?|worried|worries)\b/i.test(clean)) {
+    fields.add("concerns");
+  }
+  if (
+    /\b(questions? for (?:the )?doctor|patient questions?|anything she wants to ask|anything he wants to ask)\b/i.test(
+      clean,
+    )
+  ) {
+    fields.add("questions for doctor");
   }
 
-  return `Yes, Doctor. Based on the approved pre-visit summary: ${approvedPreVisitSummary?.trim() || getPatientHistoryText(state)}`;
+  if (
+    !fields.size &&
+    /\b(patient details|patient information|patient context|approved summary|summary|handoff|tell me about (?:the )?patient|give me (?:the )?patient)\b/i.test(
+      clean,
+    )
+  ) {
+    fields.add("reason for visit");
+    fields.add("symptoms");
+    fields.add("medications");
+  }
+
+  return Array.from(fields);
+}
+
+function approvedContextHasField(
+  field: PatientContextRequestField,
+  state: ReturnType<typeof useApp.getState>,
+): boolean {
+  const context = normalizePreVisitContext(
+    {
+      symptoms: [],
+      medications: [],
+      visitReason: "",
+      onset: "",
+      duration: "",
+      patientNotes: [],
+      concerns: [],
+      questionsForDoctor: [],
+      ...(state.patientContext ?? {}),
+    },
+    state.meds,
+  );
+
+  switch (field) {
+    case "reason for visit":
+      return Boolean(context.visitReason?.trim());
+    case "symptoms":
+      return context.symptoms.length > 0;
+    case "medications":
+      return context.medications.length > 0;
+    case "allergies":
+      return Boolean(state.profile.allergies?.trim());
+    case "medical history":
+      return Boolean(
+        state.profile.conditions?.trim() ||
+        state.profile.allergies?.trim() ||
+        state.visits.length ||
+        context.visitReason?.trim() ||
+        context.symptoms.length,
+      );
+    case "duration":
+      return Boolean(context.onset?.trim() || context.duration?.trim());
+    case "concerns":
+      return context.concerns.length > 0;
+    case "questions for doctor":
+      return context.questionsForDoctor.length > 0;
+  }
+}
+
+function getPatientClarificationQuestion(field: PatientContextRequestField): string {
+  switch (field) {
+    case "reason for visit":
+      return "Vasanthi, what is the main reason for today's visit?";
+    case "symptoms":
+      return "Vasanthi, what symptoms would you like me to share with the doctor?";
+    case "medications":
+      return "Vasanthi, can you confirm your current medications and how often you take them?";
+    case "allergies":
+      return "Vasanthi, do you have any allergies I should record?";
+    case "medical history":
+      return "Vasanthi, are there any medical conditions or previous visit details you want me to share?";
+    case "duration":
+      return "Vasanthi, when did this start and how long has it been happening?";
+    case "concerns":
+      return "Vasanthi, what are you most concerned about today?";
+    case "questions for doctor":
+      return "Vasanthi, what questions would you like the doctor to answer today?";
+  }
+}
+
+function buildMissingApprovedContextResponse(
+  text: string,
+  state: ReturnType<typeof useApp.getState>,
+): string | null {
+  const requestedFields = getRequestedPatientContextFields(text);
+  if (!requestedFields.length) return null;
+
+  const missingFields = requestedFields.filter((field) => !approvedContextHasField(field, state));
+  if (!missingFields.length) return null;
+
+  const missingText =
+    missingFields.length === 1
+      ? missingFields[0]
+      : `${missingFields.slice(0, -1).join(", ")} and ${missingFields[missingFields.length - 1]}`;
+
+  return [
+    `Doctor, I do not have approved ${missingText} information yet.`,
+    getPatientClarificationQuestion(missingFields[0]),
+  ].join(" ");
 }
 
 function looksLikeDoctorCarePlanInstruction(text: string): boolean {
@@ -1042,13 +1402,21 @@ function buildCarePlanAcknowledgement(
     if (handledCarePlanKeys?.has(clarificationKey)) return null;
     handledCarePlanKeys?.add(clarificationKey);
 
+    const cleanInstruction = normalizeTranscriptText(instruction);
+    const morningEvening =
+      /\bmorning\b/i.test(cleanInstruction) && /\bevening\b/i.test(cleanInstruction);
+    const oneWeek = /\bone week|7 days|seven days\b/i.test(cleanInstruction);
+    if (morningEvening && oneWeek && missingFields.includes("medication name")) {
+      return "Doctor, just to confirm, what is the medication name for the one tablet in the morning and one tablet in the evening for seven days?";
+    }
+
     if (missingFields.includes("medication name") && missingFields.includes("duration")) {
-      return "Doctor, what is the medication name and how many days should the patient take it?";
+      return "Doctor, could you confirm the medication name and how many days the patient should take it?";
     }
     if (missingFields.includes("medication name")) {
-      return "Doctor, what is the medication name?";
+      return "Doctor, could you confirm the medication name for the patient?";
     }
-    return "Doctor, how many days should the patient take it?";
+    return "Doctor, could you confirm how many days the patient should take this medication?";
   }
 
   const hasUsableInstruction =
@@ -1061,7 +1429,7 @@ function buildCarePlanAcknowledgement(
   const key = carePlanKey(instruction, details);
   if (handledCarePlanKeys?.has(key)) return null;
   handledCarePlanKeys?.add(key);
-  return "Understood, Doctor. I captured that for the visit summary.";
+  return "Understood, Doctor. I've updated the patient's care plan.";
 }
 
 const AI = {
@@ -1075,14 +1443,15 @@ const AI = {
     advocateActive: boolean;
   }): AdvocateIntent {
     const calledMedsBuddy = WAKE_WORD_PATTERN.test(text);
-    const doctorCanRequest = speaker === "Doctor";
     const clean = normalizeTranscriptText(text.replace(WAKE_WORD_PATTERN, " "));
+    const patientContextRequest = looksLikePatientContextRequest(clean);
+    const doctorCanRequest = speaker === "Doctor" || patientContextRequest;
 
     if (doctorCanRequest && looksLikeDoctorCarePlanInstruction(clean)) {
       return "care_plan_instruction";
     }
 
-    if (doctorCanRequest && looksLikePatientContextRequest(clean)) {
+    if (doctorCanRequest && patientContextRequest) {
       return "patient_history_request";
     }
 
@@ -1148,7 +1517,10 @@ function buildIntentResponse(
 ): string | null {
   switch (intent) {
     case "patient_history_request":
-      return buildDoctorPatientContextAnswer(state, approvedPreVisitSummary);
+      return (
+        buildMissingApprovedContextResponse(text, state) ||
+        buildDoctorPatientContextAnswer(state, approvedPreVisitSummary)
+      );
     case "medication_history_request":
       return `Yes, Doctor. On Vasanthi's behalf, here is the medication context I found: ${getLastMedicationText(state)}`;
     case "sleep_history_request":
@@ -1398,7 +1770,7 @@ function analyzeTranscriptForAdvocateAlert(
     return {
       topic: "closing-additional-questions",
       response:
-        "Before we finish, would you like me to ask the doctor any other questions for you?",
+        "Before we conclude today's visit, would you like me to clarify any medications, follow-up instructions, or warning signs for the patient?",
     };
   }
 
@@ -1493,7 +1865,7 @@ function buildVisitOpeningMessages(): ConversationMessage[] {
   return [
     {
       speaker: "MedsBuddy",
-      text: "Thank you, Doctor. I’ll keep listening and only speak if needed.",
+      text: "Thank you, Doctor. I'll monitor today's conversation and automatically assist whenever I can answer using the patient's approved information or help clarify the care plan.",
     },
   ];
 }
@@ -1759,7 +2131,7 @@ export function DoctorPage() {
   const [patientSummaryApproved, setPatientSummaryApproved] = useState(false);
   const [patientContextDraft, setPatientContextDraft] = useState("");
   const [approvedPatientContext, setApprovedPatientContext] = useState("");
-  const [preVisitSummaryPreparing, setPreVisitSummaryPreparing] = useState(true);
+  const [preVisitSummaryPreparing, setPreVisitSummaryPreparing] = useState(false);
   const [doctorVisitConsent, setDoctorVisitConsent] = useState<DoctorVisitConsent>("pending");
   const [summarySaved, setSummarySaved] = useState(false);
   const [visitMessages, setVisitMessages] = useState<ConversationMessage[]>([]);
@@ -1776,6 +2148,10 @@ export function DoctorPage() {
     buildSummaryFromTranscript([], ""),
   );
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const elevenLabsSttUnavailableRef = useRef(false);
+  const sttRequestChainRef = useRef<Promise<void>>(Promise.resolve());
   const visitMessagesRef = useRef<ConversationMessage[]>([]);
   const voiceSpeakingRef = useRef(false);
   const medsBuddyTalkingRef = useRef(true);
@@ -1813,13 +2189,13 @@ export function DoctorPage() {
       }
 
       if (humanizeInFlightKeyRef.current === summaryKey) {
-        setPreVisitSummaryPreparing(true);
+        setPreVisitSummaryPreparing(false);
         return;
       }
 
       let active = true;
       humanizeInFlightKeyRef.current = summaryKey;
-      setPreVisitSummaryPreparing(true);
+      setPreVisitSummaryPreparing(false);
 
       void humanizePreVisitSummary({
         patientId,
@@ -2084,6 +2460,47 @@ export function DoctorPage() {
         speaker: latestSpeaker,
         advocateActive: advocateActiveRef.current,
       });
+
+      if (
+        !needsLlmSpeakerClassification &&
+        fastIntent === "patient_history_request" &&
+        canMedsBuddyRespondInStage(currentVisitStage, fastIntent)
+      ) {
+        if (!medsBuddyTalkingRef.current) {
+          setWakeStatus("MedsBuddy Talking is OFF. Still listening and capturing the visit.");
+          return true;
+        }
+
+        const missingContextResponse = buildMissingApprovedContextResponse(latestText, state);
+        if (missingContextResponse) {
+          addMedsBuddyVisitMessage(
+            missingContextResponse,
+            "MedsBuddy asked the patient for missing approved information",
+          );
+          return true;
+        }
+
+        const fallbackHandoff = buildDoctorPatientContextAnswer(state, patientContextForVisit);
+        setWakeStatus("MedsBuddy is preparing a concise doctor handoff");
+        void generateDoctorHandoff({
+          patientId: getPatientId(state),
+          approvedPreVisitSummary: patientContextForVisit,
+          patientContext: state.patientContext as unknown as Record<string, unknown>,
+          medicationHistory: buildMedicationHistory(state),
+        })
+          .then((result) => {
+            const handoff = result.handoff?.trim() || fallbackHandoff;
+            addMedsBuddyVisitMessage(handoff, "MedsBuddy answered from the pre-visit summary");
+          })
+          .catch(() => {
+            addMedsBuddyVisitMessage(
+              fallbackHandoff,
+              "MedsBuddy answered from the pre-visit summary",
+            );
+          });
+        return true;
+      }
+
       const fastResponse =
         !needsLlmSpeakerClassification &&
         isFastLocalIntent(fastIntent) &&
@@ -2236,7 +2653,6 @@ export function DoctorPage() {
           : null;
         const shouldPreferLocalResponse =
           decision.intent === "medication_history_request" ||
-          decision.intent === "patient_history_request" ||
           /\b0 percent|zero taken|zero missed\b/i.test(decision.response);
 
         const intentResponse =
@@ -2345,86 +2761,186 @@ export function DoctorPage() {
     if (!mounted) return;
 
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    setVoiceSupported(Boolean(Recognition));
+    const canRecordForElevenLabs =
+      Boolean(navigator.mediaDevices?.getUserMedia) &&
+      typeof MediaRecorder !== "undefined" &&
+      !elevenLabsSttUnavailableRef.current;
+    setVoiceSupported(canRecordForElevenLabs || Boolean(Recognition));
+
+    const stopElevenLabsRecorder = () => {
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stop();
+      }
+      mediaRecorderRef.current = null;
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    };
+
+    const stopBrowserRecognition = () => {
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+    };
+
+    const startBrowserRecognition = () => {
+      if (!Recognition) return false;
+
+      const recognition = new Recognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+      recognitionRef.current = recognition;
+
+      recognition.onresult = (event) => {
+        const finalText: string[] = [];
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          if (result?.isFinal) finalText.push(result[0].transcript);
+        }
+        const transcript = finalText.join(" ").trim();
+        if (transcript) {
+          queueTranscriptChunk(transcript);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        setVoiceListening(false);
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          setWakeStatus("Microphone permission is blocked");
+          toast.error("Microphone permission is blocked. Use the transcript box instead.");
+        }
+      };
+
+      recognition.onend = () => {
+        if (stage === "active" && doctorVisitConsent === "granted" && !voiceSpeakingRef.current) {
+          try {
+            recognition.start();
+            setVoiceListening(true);
+          } catch {
+            setVoiceListening(false);
+          }
+        }
+      };
+
+      try {
+        recognition.start();
+        setVoiceListening(true);
+        setWakeStatus("Browser speech recognition is listening");
+        return true;
+      } catch {
+        setVoiceListening(false);
+        return false;
+      }
+    };
 
     if (
       stage !== "active" ||
       doctorVisitConsent !== "granted" ||
       voiceSpeaking ||
-      voiceSpeakingRef.current ||
-      !Recognition
+      voiceSpeakingRef.current
     ) {
-      recognitionRef.current?.stop();
-      recognitionRef.current = null;
+      stopElevenLabsRecorder();
+      stopBrowserRecognition();
       setVoiceListening(false);
       return;
     }
 
-    const recognition = new Recognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-    recognitionRef.current = recognition;
+    let cancelled = false;
 
-    recognition.onresult = (event) => {
-      const finalText: string[] = [];
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        if (result?.isFinal) finalText.push(result[0].transcript);
+    if (!canRecordForElevenLabs) {
+      const started = startBrowserRecognition();
+      if (!started) {
+        setWakeStatus("Microphone is unavailable. Use the transcript box instead.");
       }
-      const transcript = finalText.join(" ").trim();
-      if (transcript) {
-        queueTranscriptChunk(transcript);
-      }
-    };
-
-    recognition.onerror = (event) => {
-      setVoiceListening(false);
-      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        setWakeStatus("Microphone permission is blocked");
-        toast.error("Microphone permission is blocked. Use the transcript box instead.");
-      }
-    };
-
-    recognition.onend = () => {
-      if (stage === "active" && doctorVisitConsent === "granted" && !voiceSpeakingRef.current) {
-        try {
-          recognition.start();
-          setVoiceListening(true);
-        } catch {
-          setVoiceListening(false);
-        }
-      }
-    };
-
-    try {
-      recognition.start();
-      setVoiceListening(true);
-    } catch {
-      setVoiceListening(false);
+      return () => {
+        stopBrowserRecognition();
+      };
     }
 
+    void navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        const mimeType = getSupportedRecordingMimeType();
+        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        mediaStreamRef.current = stream;
+        mediaRecorderRef.current = recorder;
+
+        recorder.ondataavailable = (event) => {
+          if (cancelled || !event.data || event.data.size < 1200) return;
+          const audioChunk = event.data;
+          sttRequestChainRef.current = sttRequestChainRef.current
+            .catch(() => undefined)
+            .then(async () => {
+              try {
+                const result = await transcribeAudio(audioChunk);
+                const transcript = result.text?.trim();
+                if (transcript && !cancelled) {
+                  queueTranscriptChunk(transcript);
+                }
+              } catch (error) {
+                console.warn("[MedsBuddy STT] ElevenLabs STT failed. Falling back.", error);
+                elevenLabsSttUnavailableRef.current = true;
+                setWakeStatus("ElevenLabs STT unavailable. Falling back to browser speech.");
+                stopElevenLabsRecorder();
+                startBrowserRecognition();
+              }
+            });
+        };
+
+        recorder.onerror = () => {
+          elevenLabsSttUnavailableRef.current = true;
+          setWakeStatus("ElevenLabs STT recorder failed. Falling back to browser speech.");
+          stopElevenLabsRecorder();
+          startBrowserRecognition();
+        };
+
+        recorder.start(4500);
+        setVoiceListening(true);
+        setWakeStatus("ElevenLabs STT is listening");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        elevenLabsSttUnavailableRef.current = true;
+        setVoiceListening(false);
+        setWakeStatus("Microphone permission is blocked");
+        toast.error("Microphone permission is blocked. Use the transcript box instead.");
+        startBrowserRecognition();
+      });
+
     return () => {
-      recognition.onresult = null;
-      recognition.onerror = null;
-      recognition.onend = null;
+      cancelled = true;
+      stopElevenLabsRecorder();
+      stopBrowserRecognition();
       if (transcriptBufferTimerRef.current) {
         clearTimeout(transcriptBufferTimerRef.current);
         transcriptBufferTimerRef.current = null;
       }
-      recognition.stop();
     };
   }, [doctorVisitConsent, mounted, queueTranscriptChunk, stage, voiceSpeaking]);
 
   const endVisit = async () => {
     flushBufferedTranscript();
     const cleanedMessages = cleanVisitTranscript(visitMessagesRef.current);
+    const closingMessage = "Thank you, Doctor. I've updated the patient's care plan.";
+    const summaryMessages = dedupeConversation([
+      ...cleanedMessages,
+      { speaker: "MedsBuddy", text: closingMessage },
+    ]);
     const localSummary = buildSummaryFromTranscript(cleanedMessages, patientContextForVisit);
-    const transcript = conversationToTranscript(cleanedMessages);
+    const transcript = conversationToTranscript(summaryMessages);
 
     setVisitSummary(localSummary);
     setStage("summary");
-    toast.success("AI Patient Advocate summary ready");
+    toast.success("Care plan updated. AI Patient Advocate summary ready");
+    setSummarySpeaking(true);
+    void speak(closingMessage, () => setSummarySpeaking(false)).catch(() => {
+      setSummarySpeaking(false);
+    });
 
     if (!summarySaved) {
       addVisit({
@@ -2441,6 +2957,12 @@ export function DoctorPage() {
         notes: transcript,
       });
       addNote(`AI Patient Advocate follow-up: ${localSummary.followUpInstructions}`);
+      if (localSummary.medicationGuidance) {
+        addNote(`Medication schedule: ${localSummary.medicationGuidance}`);
+      }
+      if (localSummary.warningSigns && !localSummary.warningSigns.includes("not been discussed")) {
+        addNote(`Warning signs: ${localSummary.warningSigns}`);
+      }
       void saveVisitMemory({
         patientId: getPatientId(state),
         visitSummary: localSummary.visitSummary,
@@ -2639,14 +3161,10 @@ function AIAdvocateDemo({
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <button
                 onClick={onApprovePatientContext}
-                disabled={preVisitSummaryPreparing || !patientContextDraft.trim()}
+                disabled={!patientContextDraft.trim()}
                 className="rounded-xl bg-primary text-primary-foreground px-4 py-3 text-sm font-semibold disabled:opacity-50"
               >
-                {preVisitSummaryPreparing
-                  ? "Preparing..."
-                  : patientSummaryApproved
-                    ? "Approved"
-                    : "Approve Summary"}
+                {patientSummaryApproved ? "Approved" : "Approve Summary"}
               </button>
               <button
                 onClick={onEditPatientContext}
@@ -2657,13 +3175,13 @@ function AIAdvocateDemo({
             </div>
             <p className="mt-2 text-[11px] text-muted-foreground">
               {preVisitSummaryPreparing
-                ? "Qwen is generating a clean summary from today’s structured Talk context."
+                ? "MedsBuddy is refining this summary in the background. You can approve and start now."
                 : "Patient reviews and approves this summary before MedsBuddy uses it in the visit."}
             </p>
           </div>
           <button
             onClick={onStartVisit}
-            disabled={preVisitSummaryPreparing || !patientSummaryApproved}
+            disabled={!patientSummaryApproved}
             className="w-full rounded-2xl gradient-hero text-primary-foreground py-5 px-4 text-lg font-semibold inline-flex items-center justify-center gap-3 shadow-elegant disabled:opacity-50"
           >
             <Sparkles className="size-6" /> Start Live Visit
@@ -2853,29 +3371,18 @@ function VisitSummary({
           <Volume2 className="size-4" />
           {summarySpeaking ? "Speaking visit summary..." : "Speak Brief Summary"}
         </button>
-        <SummaryBlock title="Visit summary" body={summary.visitSummary} />
+        <SummaryBlock title="Reason for Visit" body={summary.visitSummary} />
+        <SummaryBlock title="Patient Symptoms" body={summary.patientConcerns} />
+        <SummaryBlock title="Doctor Assessment" body={summary.doctorAssessment} />
         <SummaryBlock title="Diagnosis" body={summary.diagnosis} />
-        <SummaryBlock title="Medication changes" body={summary.medicationChanges} />
-        <SummaryBlock title="Follow-up instructions" body={summary.followUpInstructions} />
-        <SummaryBlock
-          title="Questions for next appointment"
-          body={summary.nextAppointmentQuestions}
-        />
-        <SummaryBlock title="Patient concerns" body={summary.patientConcerns} />
-        <SummaryBlock title="Doctor assessment" body={summary.doctorAssessment} />
-        <SummaryBlock
-          title="MedsBuddy questions asked on behalf of patient"
-          body={summary.medsBuddyQuestions}
-        />
-        <SummaryBlock title="Doctor answers" body={summary.doctorAnswers} />
-        <SummaryBlock title="Medication guidance" body={summary.medicationGuidance} />
-        <SummaryBlock title="Warning signs" body={summary.warningSigns} />
-        <SummaryBlock title="Follow-up plan" body={summary.followUpPlan} />
-        <SummaryBlock
-          title="Simple patient-friendly explanation"
-          body={summary.simpleExplanation}
-        />
-        <SummaryBlock title="Caregiver share summary" body={summary.caregiverSummary} />
+        <SummaryBlock title="Medication Instructions" body={summary.medicationGuidance} />
+        <SummaryBlock title="Follow-up Plan" body={summary.followUpPlan} />
+        <SummaryBlock title="Warning Signs" body={summary.warningSigns} />
+        <SummaryBlock title="Questions Asked by MedsBuddy" body={summary.medsBuddyQuestions} />
+        <SummaryBlock title="Doctor Responses (Summarized)" body={summary.doctorAnswers} />
+        <SummaryBlock title="Plain-language Explanation" body={summary.simpleExplanation} />
+        <SummaryBlock title="Caregiver Summary" body={summary.caregiverSummary} />
+        <SummaryBlock title="Next Appointment Checklist" body={summary.nextAppointmentQuestions} />
       </div>
     </Section>
   );

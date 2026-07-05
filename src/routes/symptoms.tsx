@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { useApp } from "@/lib/store";
-import { Activity, Plus } from "lucide-react";
+import { Activity, Plus, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -19,7 +19,7 @@ export const Route = createFileRoute("/symptoms")({
 const commonSymptoms = ["Fever", "Dizziness", "Fatigue", "Leg pain", "Back pain", "Headache"];
 
 function Symptoms() {
-  const { symptoms, addSymptom } = useApp();
+  const { symptoms, addSymptom, removeSymptom, removeSymptomsByKeyword } = useApp();
   const [name, setName] = useState("");
   const [severity, setSeverity] = useState(5);
   const [notes, setNotes] = useState("");
@@ -38,6 +38,19 @@ function Symptoms() {
     setName("");
     setSeverity(5);
     setNotes("");
+  };
+
+  const deleteSymptom = (symptom: (typeof symptoms)[number]) => {
+    if (isUtiRelatedSymptom(symptom)) {
+      const removedCount = removeSymptomsByKeyword("UTI");
+      if (removedCount > 0) {
+        toast.success("Removed UTI-related symptoms");
+        return;
+      }
+    }
+
+    removeSymptom(symptom.id);
+    toast.success("Symptom removed");
   };
 
   return (
@@ -151,8 +164,18 @@ function Symptoms() {
                     {formatDateTime(symptom.at)}
                   </div>
                 </div>
-                <div className="rounded-full bg-warning/15 text-warning px-3 py-1 text-xs font-semibold">
-                  {symptom.severity}/10
+                <div className="flex items-center gap-2">
+                  <div className="rounded-full bg-warning/15 text-warning px-3 py-1 text-xs font-semibold">
+                    {symptom.severity}/10
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => deleteSymptom(symptom)}
+                    className="size-9 rounded-full border bg-background text-muted-foreground grid place-items-center transition hover:bg-destructive/10 hover:text-destructive"
+                    aria-label={`Delete ${symptom.name}`}
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
                 </div>
               </div>
               {symptom.notes && (
@@ -175,4 +198,10 @@ function formatDateTime(at: number) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function isUtiRelatedSymptom(symptom: { name: string; notes?: string }) {
+  return /\buti\b|urinary tract infection|urinary infection|burning while urinating|burning or discomfort while urinating|discomfort while urinating|urinating|urination/i.test(
+    `${symptom.name} ${symptom.notes ?? ""}`,
+  );
 }

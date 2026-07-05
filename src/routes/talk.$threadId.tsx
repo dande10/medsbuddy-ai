@@ -347,17 +347,29 @@ function buildFastLocalReply(text: string): string | null {
   return null;
 }
 
+function isAcknowledgementOnly(text: string): boolean {
+  const normalized = text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return false;
+  return /^(ok|okay|awesome|great|sounds good|good|nice|perfect|cool|got it|thank you|thanks|yes|yeah|yep|sure|alright|all right)(\s+(ok|okay|awesome|great|good|nice|perfect|cool|thanks|thank you))*$/.test(
+    normalized,
+  );
+}
+
 function buildContextSavedReply(context: LocalPatientContextExtraction): string {
   if (context.medications.length) {
-    return `Got it. I added ${context.medications.join(", ")} to your doctor-visit notes.`;
+    return "I've updated your health summary and will include this medication information in today's doctor visit.";
   }
   if (context.symptoms.length) {
-    return `Got it. I added ${context.symptoms.join(", ")} to your doctor-visit notes.`;
+    return "I've updated your health summary and will include these symptoms in today's doctor visit.";
   }
   if (context.questionsForDoctor.length) {
-    return "Got it. I added that question for your doctor visit.";
+    return "I've added that to the questions for your doctor visit.";
   }
-  return "Got it. I saved that for your doctor visit.";
+  return "I've updated your doctor-visit summary with that information.";
 }
 
 type AgentDataRecord = Record<string, unknown>;
@@ -403,6 +415,23 @@ function normalizeMedicationText(name: string, dosage: string, frequency: string
 function medicationDisplay(name: string, dosage: string, frequency: string): string {
   const label = [name, dosage].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
   return frequency ? `${label} — ${frequency.toLowerCase()}` : label;
+}
+
+function looksLikeDoseTaken(text: string): boolean {
+  return /\b(already\s+)?(taken|took|take|had|completed)\b/i.test(text);
+}
+
+function findMedicationMention(
+  medications: ReturnType<typeof useApp.getState>["meds"],
+  text: string,
+) {
+  const clean = text.toLowerCase();
+  return medications.find((med) => {
+    const name = med.name.toLowerCase();
+    if (name && clean.includes(name)) return true;
+    const words = name.split(/\s+/).filter((word) => word.length > 3);
+    return words.length > 0 && words.some((word) => clean.includes(word));
+  });
 }
 
 function isUtiRelatedText(text: string): boolean {
@@ -494,6 +523,7 @@ function TalkThreadPage() {
     setActiveThread,
     setProfile,
     addMed,
+    logDose,
     addSymptom,
     removeSymptomsByKeyword,
     addDoctorVisitPrep,
@@ -631,6 +661,16 @@ function TalkThreadPage() {
       }
 
       if (action === "add_medication") {
+        const existingMedicationForDose = looksLikeDoseTaken(text)
+          ? findMedicationMention(useApp.getState().meds, text)
+          : null;
+        if (existingMedicationForDose) {
+          logDose(existingMedicationForDose.id, "taken");
+          reply = `Got it. I logged ${existingMedicationForDose.name} as taken.`;
+          await speakAndContinue(reply);
+          return;
+        }
+
         const medicationItems = arrayValue(data.medications).length
           ? arrayValue(data.medications)
           : [data];
@@ -641,6 +681,7 @@ function TalkThreadPage() {
           ),
         );
         const savedMeds: string[] = [];
+        const existingMeds: string[] = [];
 
         for (const item of medicationItems) {
           const med = asRecord(item);
@@ -652,15 +693,33 @@ function TalkThreadPage() {
           if (!existingKeys.has(key)) {
             addMed({ name, dosage, frequency, times: [] });
             existingKeys.add(key);
+            savedMeds.push(medicationDisplay(name, dosage, frequency));
+          } else {
+            existingMeds.push(medicationDisplay(name, dosage, frequency));
           }
-          savedMeds.push(medicationDisplay(name, dosage, frequency));
         }
 
         if (savedMeds.length) {
           updatePatientContext({ medications: savedMeds });
           const updated = useApp.getState().patientContext.medications;
-          reply = `Got it. I added ${savedMeds.join(", ")} to your medication list.`;
+          reply =
+            "I've updated your medication list and will include this in today's doctor visit.";
           console.info("Agent saved medications", updated);
+        } else if (existingMeds.length) {
+          reply = `I already have ${existingMeds.join(", ")} in your medication list.`;
+        }
+      }
+
+      if (action === "log_dose") {
+        const medicationName = stringValue(data.medicationName || data.name || data.medication);
+        const medication =
+          findMedicationMention(useApp.getState().meds, medicationName || text) ||
+          findMedicationMention(useApp.getState().meds, text);
+        if (medication) {
+          logDose(medication.id, "taken");
+          reply = `Got it. I logged ${medication.name} as taken.`;
+        } else {
+          reply = "Which medication did you take?";
         }
       }
 
@@ -695,7 +754,8 @@ function TalkThreadPage() {
             duration: stringValue(data.duration),
             patientNotes: [stringValue(data.notes)].filter(Boolean),
           });
-          reply = `Got it. I added ${savedSymptoms.join(", ")} to your symptoms.`;
+          reply =
+            "I've updated your health summary and will include these symptoms in today's doctor visit.";
         }
       }
 
@@ -757,13 +817,13 @@ function TalkThreadPage() {
           ...questionsForDoctor,
         ].filter(Boolean);
         reply = savedPrep.length
-          ? `Got it. I added ${savedPrep.slice(0, 3).join(", ")} to your doctor-visit notes.`
-          : "Got it. I saved that to your doctor-visit notes.";
+          ? "I've updated your pre-visit summary and will use it for today's doctor visit."
+          : "I've updated your doctor-visit summary with that information.";
       }
 
       if (action === "generate_doctor_visit_summary") {
         addNote(`Doctor visit summary request: ${text}`);
-        reply = "Got it. I’ll generate the visit summary from the cleaned doctor visit transcript.";
+        reply = "I’ll generate the visit summary from the cleaned doctor visit information.";
       }
 
       if (action === "generate_qr") {
@@ -801,6 +861,11 @@ function TalkThreadPage() {
     };
 
     const stateBeforeContextUpdate = useApp.getState();
+    if (isAcknowledgementOnly(text)) {
+      await speakAndContinue("Great. I’ll keep that ready for your doctor visit.");
+      return;
+    }
+
     if (!offline) {
       try {
         const current = stateBeforeContextUpdate.threads.find(

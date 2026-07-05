@@ -100,6 +100,13 @@ class HumanizePreVisitSummaryRequest(BaseModel):
     rawPatientContext: str = Field(..., min_length=1)
 
 
+class DoctorHandoffRequest(BaseModel):
+    patientId: str = Field(..., min_length=1)
+    approvedPreVisitSummary: str = Field(..., min_length=1)
+    patientContext: dict[str, Any] = Field(default_factory=dict)
+    medicationHistory: str = ""
+
+
 class PatientContextMessage(BaseModel):
     role: str
     content: str
@@ -369,6 +376,11 @@ async def reason(req: ReasonRequest) -> dict[str, Any]:
                     "You are MedsBuddy, an AI Patient Advocate in a doctor visit. "
                     "Analyze the latest transcript semantically. Detect speaker, intent, "
                     "confidence, whether MedsBuddy should respond, and a short response if needed. "
+                    "If the doctor asks for patient details, symptoms, medications, history, or reason for visit, "
+                    "summarize the approved patient context for a physician in less than 100 words. "
+                    "Remove duplicates, normalize medication names, and present only clinically relevant facts. "
+                    "Never dump raw JSON or database fields. Never say standard dose, prenatal one, "
+                    "prenatal vitamin one tablet, or duplicate medication names. "
                     "Use approved visit memory only when relevant. Return JSON only with keys "
                     "speaker, intent, confidence, shouldRespond, response, memoryUsed."
                 ),
@@ -401,9 +413,18 @@ async def humanize_previsit_summary(req: HumanizePreVisitSummaryRequest) -> dict
                 "content": (
                     "Rewrite this raw patient context into a clean, patient-friendly pre-visit summary. "
                     "Remove unclear transcription artifacts, duplicates, filler words, and confusing phrases. "
-                    "Do not invent medical facts. Keep only clear facts. Use sections: Current Medications, "
-                    "Current Symptoms, Medication History, Allergies, Conditions. Convert severity numbers into "
-                    "mild/moderate/severe. Return only clean text."
+                    "Do not invent medical facts. Keep only clear facts. Use sections: Reason for Visit, "
+                    "Current Symptoms, Current Medications, Patient Notes, Allergies, Conditions. "
+                    "Use the patient name exactly as provided. If UTI or urinary discomfort appears, set Reason for Visit "
+                    "to 'Possible urinary tract infection symptoms.' and Current Symptoms to 'Burning or discomfort while urinating.' "
+                    "If Reason for Visit is blank but clear symptoms, concerns, onset, or duration exist, infer a concise "
+                    "reason from those facts, for example 'Severe sore throat with difficulty speaking for four days.' "
+                    "Never write 'Not clearly captured yet' when clear symptoms are available. "
+                    "Deduplicate medications by normalized name. prenatal/prenatal vitamin/prenatal one means Prenatal vitamin. "
+                    "vitamin B12/B12/vb12 means Vitamin B12. vitamin D/D3 means Vitamin D. "
+                    "Show each medication only once. Never say standard dose. If dosage is unknown, omit dosage and write "
+                    "'Vitamin B12 — once daily', not 'Vitamin B12 standard dose — once daily'. "
+                    "Return only clean text."
                 ),
             },
             {
@@ -419,6 +440,45 @@ async def humanize_previsit_summary(req: HumanizePreVisitSummaryRequest) -> dict
         "qwen": os.getenv("QWEN_CHAT_MODEL", "qwen-plus").strip() or "qwen-plus",
         "summary": reply.strip(),
     }
+
+
+@app.post("/api/medsbuddy/doctor-handoff")
+async def doctor_handoff(req: DoctorHandoffRequest) -> dict[str, Any]:
+    logger.info("Alibaba ECS API called: doctor-handoff")
+    chat_model = os.getenv("QWEN_CHAT_MODEL", "qwen-plus").strip() or "qwen-plus"
+    reply = await qwen_chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "Summarize the approved patient context for a physician in less than 100 words. "
+                    "Remove duplicates, normalize medication names, and present only clinically relevant facts. "
+                    "Use concise section labels. Never dump raw JSON or database fields. "
+                    "Never say standard dose, prenatal one, prenatal vitamin one tablet, or duplicate medication names. "
+                    "Normalize prenatal/prenatal vitamin/prenatal one to Prenatal vitamin; "
+                    "vitamin B12/B12/vb12 to Vitamin B12; vitamin D/D3 to Vitamin D. "
+                    "If UTI, urinary discomfort, burning, or discomfort while urinating appears, say Reason for today's visit: "
+                    "Possible urinary tract infection symptoms. If Reason for Visit is blank but symptoms or concerns exist, "
+                    "infer a concise reason from those approved facts. Never say 'Not clearly captured yet'. "
+                    "Return only the spoken handoff text."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "patientId": req.patientId,
+                        "approvedPreVisitSummary": req.approvedPreVisitSummary,
+                        "patientContext": req.patientContext,
+                        "medicationHistory": req.medicationHistory,
+                    }
+                ),
+            },
+        ],
+        max_tokens=180,
+        model=chat_model,
+    )
+    return {"patientId": req.patientId, "qwen": chat_model, "handoff": reply.strip()}
 
 
 @app.post("/api/medsbuddy/extract-patient-context")
@@ -485,7 +545,11 @@ async def generate_summary(req: GenerateSummaryRequest) -> dict[str, Any]:
                     "'Take one tablet in the morning and one tablet in the evening for one week.' "
                     "Do not say no medication changes if medication instructions exist. "
                     "Do not put raw transcript under follow-up instructions. "
-                    "Include only discussed facts and keep wording patient-friendly. "
+                    "Include only clinically relevant discussed facts and keep wording natural, professional, and patient-friendly. "
+                    "Organize the content as a healthcare assistant would: reason for visit, patient symptoms, "
+                    "doctor assessment, diagnosis status as confirmed/possible/not confirmed, medication instructions, "
+                    "follow-up plan, warning signs, MedsBuddy clarification questions, summarized doctor responses, "
+                    "plain-language explanation, and caregiver summary. "
                     "Return JSON only with keys visitSummary, diagnosis, medications, allergies, "
                     "followUp, warningSigns, patientFriendlyExplanation, caregiverShareSummary."
                 ),
@@ -611,7 +675,7 @@ async def medsbuddy_agent_router(req: AgentRouterRequest) -> dict[str, Any]:
                     "save health data, prepare doctor visit context, generate QR flow, create chats, and answer normally. "
                     "Never say you cannot navigate pages. Return JSON only with exact keys: "
                     "intent, action, data, needsSave, navigateTo, response. "
-                    "Allowed actions: update_profile, add_symptom, remove_symptom, add_medication, doctor_visit_prep, navigate, "
+                    "Allowed actions: update_profile, add_symptom, remove_symptom, add_medication, log_dose, doctor_visit_prep, navigate, "
                     "generate_qr, new_chat, open_previous_chat, generate_doctor_visit_summary, answer, ask_follow_up. "
                     "Allowed navigateTo values: /doctor, /reminders, /memory, /emergency, /talk, /profile, /. "
                     "For profile data, data may include name, dob, bloodGroup, allergies, conditions, "
@@ -623,8 +687,11 @@ async def medsbuddy_agent_router(req: AgentRouterRequest) -> dict[str, Any]:
                     "When adding UTI symptoms, create one clean symptom unless the user clearly gives separate symptoms: "
                     "name 'Possible urinary tract infection symptoms' and notes 'Burning or discomfort while urinating'. "
                     "For medications, data may include medications array with name, dosage, frequency, timing. "
+                    "If the user says they already took, have taken, took, or completed a medication dose, use action log_dose with data.medicationName and data.status='taken'. Do not add the medication again. "
                     "For doctor visit prep, data may include visitReason, symptoms, concerns, questionsForDoctor, "
                     "timeline, onset, duration, patientNotes. "
+                    "If the user only says an acknowledgement like okay, awesome, great, thanks, got it, or sounds good, "
+                    "use action answer, needsSave false, and do not repeat or re-save previous symptoms or visit prep. "
                     "If data is unclear, use action ask_follow_up, needsSave false, and ask one short question. "
                     "Keep response warm, simple, and human. Do not invent medical facts."
                 ),
@@ -674,6 +741,7 @@ def qwen_proof_get() -> dict[str, Any]:
             "POST /api/medsbuddy/ask-memory",
             "POST /api/medsbuddy/clarification-check",
             "POST /api/medsbuddy/extract-patient-context",
+            "POST /api/medsbuddy/doctor-handoff",
             "POST /api/medsbuddy/agent-router",
             "POST /api/medsbuddy/chat",
         ],
