@@ -1,7 +1,6 @@
 import { useApp, adherence } from "@/lib/store";
 import { speak, stopSpeaking } from "@/lib/voice";
 import {
-  generateDoctorHandoff,
   generateVisitSummary,
   humanizePreVisitSummary,
   saveVisitMemory,
@@ -23,15 +22,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
-  ADVOCATE_ALERT_COOLDOWN_MS,
-  AI,
   TRANSCRIPT_MERGE_DELAY_MS,
-  analyzeTranscriptForAdvocateAlert,
-  buildApprovedContextFallbackResponse,
   buildCarePlanResponseWithQwen,
   buildDoctorConsentMessage,
-  buildDoctorPatientContextAnswer,
-  buildIntentResponse,
   buildMedicationHistory,
   buildPatientSummary,
   buildReadablePreVisitFallback,
@@ -49,7 +42,6 @@ import {
   getPatientId,
   getSupportedRecordingMimeType,
   getTranscriptDelta,
-  isFastLocalIntent,
   isLowValueTranscript,
   isStartTalkingCommand,
   isStopTalkingCommand,
@@ -63,7 +55,6 @@ import {
   parseTranscriptMessages,
   semanticSpeakerToConversationSpeaker,
   shouldUseLlmVisitReasoning,
-  type AdvocateAlertTopic,
   type ConversationMessage,
   type DemoStage,
   type DoctorVisitConsent,
@@ -154,9 +145,7 @@ export function DoctorPage() {
   const medsBuddyTalkingRef = useRef(true);
   const advocateActiveRef = useRef(false);
   const spokenMedsBuddyKeysRef = useRef<Set<string>>(new Set());
-  const alertedTopicsRef = useRef<Set<AdvocateAlertTopic>>(new Set());
   const handledCarePlanKeysRef = useRef<Set<string>>(new Set());
-  const lastAdvocateAlertAtRef = useRef(0);
   const semanticRequestIdRef = useRef(0);
   const humanizedSummaryCacheRef = useRef<Map<string, string>>(new Map());
   const humanizeInFlightKeyRef = useRef<string | null>(null);
@@ -271,9 +260,7 @@ export function DoctorPage() {
     transcriptBufferRef.current = "";
     transcriptBufferStartedAtRef.current = null;
     spokenMedsBuddyKeysRef.current.clear();
-    alertedTopicsRef.current.clear();
     handledCarePlanKeysRef.current.clear();
-    lastAdvocateAlertAtRef.current = 0;
     setDoctorVisitConsent("pending");
     setVisitMessages([buildDoctorConsentMessage(approvedContext, profile.name || "Vasanthi")]);
     setVisitSummary(buildSummaryFromTranscript([], approvedContext));
@@ -457,118 +444,7 @@ export function DoctorPage() {
         return true;
       }
 
-      const fastIntent = AI.detectIntent({
-        text: latestText,
-        speaker: latestSpeaker,
-        advocateActive: advocateActiveRef.current,
-      });
-
-      if (
-        !needsLlmSpeakerClassification &&
-        fastIntent === "patient_history_request" &&
-        canMedsBuddyRespondInStage(currentVisitStage, fastIntent)
-      ) {
-        if (!medsBuddyTalkingRef.current) {
-          setWakeStatus("MedsBuddy Talking is OFF. Still listening and capturing the visit.");
-          return true;
-        }
-
-        const fallbackHandoff = buildDoctorPatientContextAnswer(state, patientContextForVisit);
-        setWakeStatus("MedsBuddy is preparing a concise doctor handoff");
-        void generateDoctorHandoff({
-          patientId: getPatientId(state),
-          approvedPreVisitSummary: patientContextForVisit,
-          patientContext: state.patientContext as unknown as Record<string, unknown>,
-          medicationHistory: buildMedicationHistory(state),
-        })
-          .then((result) => {
-            const handoff = result.handoff?.trim() || fallbackHandoff;
-            addMedsBuddyVisitMessage(handoff, "MedsBuddy answered from the pre-visit summary");
-          })
-          .catch(() => {
-            addMedsBuddyVisitMessage(
-              fallbackHandoff,
-              "MedsBuddy answered from the pre-visit summary",
-            );
-          });
-        return true;
-      }
-
-      if (
-        !needsLlmSpeakerClassification &&
-        fastIntent === "care_plan_instruction" &&
-        canMedsBuddyRespondInStage(currentVisitStage, fastIntent)
-      ) {
-        if (!medsBuddyTalkingRef.current) {
-          setWakeStatus("MedsBuddy Talking is OFF. Still listening and capturing the visit.");
-          return true;
-        }
-
-        setWakeStatus("MedsBuddy is checking the care plan for missing details");
-        void buildCarePlanResponseWithQwen({
-          text: latestText,
-          messages: nextMessages,
-          state,
-          patientContext: patientContextForVisit,
-          handledCarePlanKeys: handledCarePlanKeysRef.current,
-        }).then((response) => {
-          if (!response) {
-            setWakeStatus("MedsBuddy is ready for follow-up questions");
-            return;
-          }
-          addMedsBuddyVisitMessage(response, "MedsBuddy is clarifying the care plan");
-        });
-        return true;
-      }
-
-      const fastResponse =
-        !needsLlmSpeakerClassification &&
-        isFastLocalIntent(fastIntent) &&
-        canMedsBuddyRespondInStage(currentVisitStage, fastIntent) &&
-        buildIntentResponse(
-          fastIntent,
-          latestText,
-          nextMessages,
-          state,
-          handledCarePlanKeysRef.current,
-          patientContextForVisit,
-        );
-
-      if (fastResponse) {
-        if (fastIntent === "direct_call") {
-          setAdvocateActive(true);
-          advocateActiveRef.current = true;
-        }
-        setWakeStatus(
-          fastIntent === "direct_call"
-            ? "MedsBuddy was called"
-            : "MedsBuddy answered from the pre-visit summary",
-        );
-        addMedsBuddyVisitMessage(
-          fastResponse,
-          fastIntent === "direct_call"
-            ? "MedsBuddy was called"
-            : "MedsBuddy answered from the pre-visit summary",
-        );
-        return true;
-      }
-
-      const fastAlert = analyzeTranscriptForAdvocateAlert(
-        currentTranscript,
-        patientContextForVisit,
-      );
-      const now = Date.now();
-      if (
-        !needsLlmSpeakerClassification &&
-        fastAlert &&
-        !alertedTopicsRef.current.has(fastAlert.topic) &&
-        now - lastAdvocateAlertAtRef.current >= ADVOCATE_ALERT_COOLDOWN_MS
-      ) {
-        alertedTopicsRef.current.add(fastAlert.topic);
-        lastAdvocateAlertAtRef.current = now;
-        addMedsBuddyVisitMessage(fastAlert.response, "MedsBuddy noticed a clarification");
-        return true;
-      }
+      const fastIntent = "none" as const;
 
       if (!medsBuddyTalkingRef.current) {
         setWakeStatus("MedsBuddy Talking is OFF. Still listening and capturing the visit.");
@@ -612,24 +488,12 @@ export function DoctorPage() {
           });
         }
 
-        const fallbackIntent = AI.detectIntent({
-          text: latestText,
-          speaker: latestSpeaker,
-          advocateActive: advocateActiveRef.current,
-        });
+        if (!semanticDecision) {
+          setWakeStatus("MedsBuddy could not reach AI reasoning. Continuing to capture the visit.");
+          return;
+        }
 
-        const decision: SemanticIntentDecision = semanticDecision ?? {
-          speaker: latestSpeaker
-            ? (latestSpeaker.toLowerCase() as SemanticIntentDecision["speaker"])
-            : "unknown",
-          intent: fallbackIntent,
-          shouldRespond: fallbackIntent !== "none" && fallbackIntent !== "normal_conversation",
-          response: "",
-          requestedFields: [],
-          missingFields: [],
-          patientClarificationQuestion: "",
-          includePreviousVisitHistory: false,
-        };
+        const decision: SemanticIntentDecision = semanticDecision;
         const asyncVisitStage = detectVisitStage(
           conversationToTranscript(visitMessagesRef.current),
         );
@@ -676,8 +540,8 @@ export function DoctorPage() {
         }
 
         const stageAllowsResponse = canMedsBuddyRespondInStage(asyncVisitStage, decision.intent);
-        const localIntentResponse =
-          stageAllowsResponse && decision.intent === "care_plan_instruction"
+        const carePlanResponse =
+          stageAllowsResponse && decision.intent === "care_plan_instruction" && !decision.response
             ? await buildCarePlanResponseWithQwen({
                 text: latestText,
                 messages: visitMessagesRef.current,
@@ -685,28 +549,10 @@ export function DoctorPage() {
                 patientContext: patientContextForVisit,
                 handledCarePlanKeys: handledCarePlanKeysRef.current,
               })
-            : stageAllowsResponse
-              ? buildIntentResponse(
-                  decision.intent,
-                  latestText,
-                  visitMessagesRef.current,
-                  state,
-                  handledCarePlanKeysRef.current,
-                  patientContextForVisit,
-                  decision,
-                )
-              : null;
-        const shouldPreferLocalResponse =
-          decision.intent === "care_plan_instruction" ||
-          decision.intent === "medication_history_request" ||
-          /\b0 percent|zero taken|zero missed\b/i.test(decision.response);
+            : null;
 
         const intentResponse =
-          decision.shouldRespond &&
-          stageAllowsResponse &&
-          (shouldPreferLocalResponse
-            ? localIntentResponse
-            : decision.response || localIntentResponse);
+          decision.shouldRespond && stageAllowsResponse && (decision.response || carePlanResponse);
 
         if (intentResponse) {
           addMedsBuddyVisitMessage(
@@ -716,39 +562,11 @@ export function DoctorPage() {
               : "MedsBuddy is answering the doctor",
           );
         } else {
-          const approvedContextFallback = buildApprovedContextFallbackResponse(
-            latestTurnText,
-            state,
-            patientContextForVisit,
+          setWakeStatus(
+            advocateActiveRef.current
+              ? "MedsBuddy is ready for follow-up questions"
+              : "MedsBuddy is listening",
           );
-          if (approvedContextFallback) {
-            addMedsBuddyVisitMessage(
-              approvedContextFallback,
-              "MedsBuddy answered from the approved patient context",
-            );
-            return;
-          }
-
-          const alert = analyzeTranscriptForAdvocateAlert(
-            conversationToTranscript(visitMessagesRef.current),
-            patientContextForVisit,
-          );
-          const now = Date.now();
-          if (
-            alert &&
-            !alertedTopicsRef.current.has(alert.topic) &&
-            now - lastAdvocateAlertAtRef.current >= ADVOCATE_ALERT_COOLDOWN_MS
-          ) {
-            alertedTopicsRef.current.add(alert.topic);
-            lastAdvocateAlertAtRef.current = now;
-            addMedsBuddyVisitMessage(alert.response, "MedsBuddy noticed a clarification");
-          } else {
-            setWakeStatus(
-              advocateActiveRef.current
-                ? "MedsBuddy is ready for follow-up questions"
-                : "MedsBuddy is listening",
-            );
-          }
         }
       })();
 

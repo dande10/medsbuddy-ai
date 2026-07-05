@@ -411,21 +411,6 @@ type PatientContextRequestField =
   | "duration"
   | "concerns"
   | "questions for doctor";
-const APPROVED_CONTEXT_REQUEST_TERMS = [
-  "reason",
-  "today",
-  "visit",
-  "summary",
-  "context",
-  "patient",
-  "history",
-  "medication",
-  "medicine",
-  "symptom",
-  "allergy",
-  "concern",
-  "question",
-];
 type SemanticIntentDecision = {
   speaker: "doctor" | "patient" | "medsbuddy" | "unknown";
   intent: AdvocateIntent;
@@ -1568,23 +1553,6 @@ function buildIntentResponse(
   }
 }
 
-function buildApprovedContextFallbackResponse(
-  text: string,
-  state: ReturnType<typeof useApp.getState>,
-  approvedPreVisitSummary?: string,
-): string | null {
-  const clean = normalizeTranscriptText(text.replace(WAKE_WORD_PATTERN, " "));
-  const hasRequestCue =
-    /[?]$/.test(clean) ||
-    /\b(can|could|what|why|when|which|tell|give|show|summarize|summarise|explain)\b/i.test(clean);
-  if (!hasRequestCue) return null;
-  const mentionsApprovedContext = APPROVED_CONTEXT_REQUEST_TERMS.some((term) =>
-    clean.includes(term),
-  );
-  if (!mentionsApprovedContext) return null;
-  return buildDoctorPatientContextAnswer(state, approvedPreVisitSummary);
-}
-
 function isFastLocalIntent(intent: AdvocateIntent): boolean {
   return intent === "direct_call";
 }
@@ -1771,19 +1739,17 @@ function canMedsBuddyRespondInStage(stage: VisitStage, intent: AdvocateIntent): 
 }
 
 function shouldUseLlmVisitReasoning({
-  latestText,
-  latestSpeaker,
+  latestText: _latestText,
+  latestSpeaker: _latestSpeaker,
   latestSpeakerConfidence: _latestSpeakerConfidence,
-  fastIntent,
+  fastIntent: _fastIntent,
 }: {
   latestText: string;
   latestSpeaker?: ConversationSpeaker;
   latestSpeakerConfidence: number;
   fastIntent: AdvocateIntent;
 }): boolean {
-  if (fastIntent !== "none" && fastIntent !== "normal_conversation") return true;
-  if (WAKE_WORD_PATTERN.test(latestText)) return true;
-  return latestSpeaker === "Doctor";
+  return true;
 }
 
 function analyzeTranscriptForAdvocateAlert(
@@ -1991,7 +1957,6 @@ export {
   buildCarePlanResponseWithQwen,
   buildDoctorConsentMessage,
   buildDoctorPatientContextAnswer,
-  buildApprovedContextFallbackResponse,
   buildIntentResponse,
   buildMedicationHistory,
   buildPatientSummary,
