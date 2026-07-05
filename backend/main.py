@@ -843,12 +843,12 @@ async def qwen_proof_post(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@app.post("/api/stt")
+@app.post("/api/stt", response_model=None)
 async def elevenlabs_stt(
     request: Request,
     audio: Optional[UploadFile] = File(None),
     file: Optional[UploadFile] = File(None),
-) -> Response | dict[str, str]:
+) -> Any:
     key = os.getenv("ELEVENLABS_API_KEY", "").strip()
     if not key:
         raise HTTPException(status_code=500, detail="Missing ELEVENLABS_API_KEY")
