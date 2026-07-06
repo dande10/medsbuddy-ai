@@ -362,7 +362,7 @@ function buildMedicationHistory(state: ReturnType<typeof useApp.getState>): stri
 type DemoStage = "idle" | "active" | "summary";
 type ConversationSpeaker = "Doctor" | "Patient" | "MedsBuddy" | "Unknown";
 type SpeakerMode = "Auto" | "Doctor" | "Patient";
-type SpeakerDetectionSource = "elevenlabs_label" | "local_rules" | "llm";
+type SpeakerDetectionSource = "elevenlabs_label" | "local_rules" | "llm" | "qwen_pending";
 type SpeakerClassification = {
   speaker: ConversationSpeaker;
   confidence: number;
@@ -550,7 +550,7 @@ function parseTranscriptMessages(
         text: cleanedText,
         speakerConfidence: 0,
         speakerReason: "Awaiting Qwen speaker classification.",
-        speakerSource: "local_rules",
+        speakerSource: "qwen_pending",
       },
     ];
   }
@@ -1117,6 +1117,12 @@ type MedicationInstructionDetails = {
   duration: string;
   interval: string;
 };
+type PrescribedMedication = {
+  name: string;
+  dosage: string;
+  frequency: string;
+  times: string[];
+};
 type CarePlanField =
   | "medication name"
   | "dosage"
@@ -1163,18 +1169,18 @@ function extractMedicationInstructionDetails(text: string): MedicationInstructio
   const clean = cleanTranscriptInput(text).replace(WAKE_WORD_PATTERN, " ").replace(/\s+/g, " ");
   const lower = clean.toLowerCase();
   const afterAction = lower.match(
-    /\b(?:start|prescribe|prescribed|give|take|continue|finish|stop)\s+(?:her|him|the patient|you|the)?\s*([a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2})/i,
+    /\b(?:start|prescribe|prescribed|prescribing|give|take|continue|finish|stop)\s+(?:her|him|the patient|you|the)?\s*([a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2})/i,
   )?.[1];
   const dose =
     clean.match(
-      /\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|units?|tablets?|tabs?|capsules?|caps?|pills?|puffs?|drops?)\b/i,
+      /\b\d+(?:\.\d+)?\s*(?:mg|milligrams?|mcg|micrograms?|g|grams?|ml|units?|tablets?|tabs?|capsules?|caps?|pills?|puffs?|drops?)\b/i,
     )?.[0] ||
     clean.match(
       /\b(?:one|two|three|four|five|[1-5])\s+(?:tablets?|tabs?|capsules?|caps?|pills?|doses?)\b/i,
     )?.[0];
   const interval = clean.match(/\b(?:every|q)\s*\d+\s*(?:hours?|hrs?|h|days?|d)\b/i)?.[0];
   const frequency = clean.match(
-    /\b(?:once|twice|three times|four times|[1-4] times)\s+(?:a|per)\s+day\b|\b(?:daily|bid|tid|qid)\b/i,
+    /\b(?:once|twice|three times|four times|[1-4] times)\s+(?:(?:a|per)\s+day|daily)\b|\b(?:daily|bid|tid|qid)\b/i,
   )?.[0];
   const timing = clean.match(
     /\b(?:morning|afternoon|evening|night|bedtime|breakfast|lunch|dinner|with food|after food|before food|with meals?|after meals?|before meals?|empty stomach)\b/i,
@@ -1190,6 +1196,46 @@ function extractMedicationInstructionDetails(text: string): MedicationInstructio
     timing: timing || "",
     duration: duration || "",
     interval: interval || "",
+  };
+}
+
+function formatMedicationName(name: string): string {
+  return name
+    .replace(/\b(?:her|him|the patient|you|the)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function normalizeMedicationFrequency(details: MedicationInstructionDetails): string {
+  const schedule = details.frequency || details.interval || details.timing;
+  const parts = [schedule, details.duration].filter(Boolean);
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function extractPrescribedMedicationFromCarePlan(
+  text: string,
+  messages: ConversationMessage[],
+): PrescribedMedication | null {
+  const instruction = collectDoctorCarePlan(messages, mergeRecentDoctorCarePlan(messages, text));
+  const details = extractMedicationInstructionDetails(instruction);
+  if (
+    isMissingMedicationName(details) ||
+    !hasMedicationDose(details) ||
+    !hasMedicationFrequency(details)
+  ) {
+    return null;
+  }
+
+  const name = formatMedicationName(details.medication);
+  const frequency = normalizeMedicationFrequency(details);
+  if (!name || !details.dose || !frequency) return null;
+
+  return {
+    name,
+    dosage: details.dose,
+    frequency,
+    times: [],
   };
 }
 
@@ -2029,6 +2075,7 @@ export {
   dedupeConversation,
   detectSemanticIntentWithLLM,
   detectVisitStage,
+  extractPrescribedMedicationFromCarePlan,
   getPatientId,
   getSupportedRecordingMimeType,
   getTranscriptDelta,

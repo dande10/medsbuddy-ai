@@ -39,6 +39,7 @@ import {
   dedupeConversation,
   detectSemanticIntentWithLLM,
   detectVisitStage,
+  extractPrescribedMedicationFromCarePlan,
   getPatientId,
   getSupportedRecordingMimeType,
   getTranscriptDelta,
@@ -112,6 +113,8 @@ export function DoctorPage() {
     addSummary,
     addVisit,
     addNote,
+    upsertMed,
+    updatePatientContext,
     resetCurrentPatientContext,
   } = state;
   const [mounted, setMounted] = useState(false);
@@ -146,6 +149,7 @@ export function DoctorPage() {
   const advocateActiveRef = useRef(false);
   const spokenMedsBuddyKeysRef = useRef<Set<string>>(new Set());
   const handledCarePlanKeysRef = useRef<Set<string>>(new Set());
+  const savedMedicationInstructionKeysRef = useRef<Set<string>>(new Set());
   const semanticRequestIdRef = useRef(0);
   const humanizedSummaryCacheRef = useRef<Map<string, string>>(new Map());
   const humanizeInFlightKeyRef = useRef<string | null>(null);
@@ -261,6 +265,7 @@ export function DoctorPage() {
     transcriptBufferStartedAtRef.current = null;
     spokenMedsBuddyKeysRef.current.clear();
     handledCarePlanKeysRef.current.clear();
+    savedMedicationInstructionKeysRef.current.clear();
     setDoctorVisitConsent("pending");
     setVisitMessages([buildDoctorConsentMessage(approvedContext, profile.name || "Vasanthi")]);
     setVisitSummary(buildSummaryFromTranscript([], approvedContext));
@@ -468,8 +473,10 @@ export function DoctorPage() {
       }
 
       void (async () => {
+        const latestTranscriptForQwen =
+          latestSpeaker === "Unknown" ? latestText : `${latestSpeaker}: ${latestText}`;
         const semanticDecision = await detectSemanticIntentWithLLM({
-          latestTranscript: `${latestSpeaker}: ${latestText}`,
+          latestTranscript: latestTranscriptForQwen,
           currentTranscript,
           patientContext: patientContextForVisit,
           state,
@@ -480,6 +487,7 @@ export function DoctorPage() {
             rawTranscript: transcript,
             cleanedTranscript,
             messageText: latestTurnText,
+            qwenTranscript: latestTranscriptForQwen,
             previousSpeaker: latestSpeaker,
             localConfidence: latestSpeakerConfidence,
             llmSpeaker: semanticDecision.speaker,
@@ -539,7 +547,9 @@ export function DoctorPage() {
           advocateActiveRef.current = true;
         }
 
-        const stageAllowsResponse = canMedsBuddyRespondInStage(asyncVisitStage, decision.intent);
+        const stageAllowsResponse =
+          decision.intent === "care_plan_instruction" ||
+          canMedsBuddyRespondInStage(asyncVisitStage, decision.intent);
         const carePlanResponse =
           stageAllowsResponse && decision.intent === "care_plan_instruction" && !decision.response
             ? await buildCarePlanResponseWithQwen({
@@ -550,6 +560,34 @@ export function DoctorPage() {
                 handledCarePlanKeys: handledCarePlanKeysRef.current,
               })
             : null;
+
+        if (decision.intent === "care_plan_instruction") {
+          const prescribedMedication = extractPrescribedMedicationFromCarePlan(
+            latestText,
+            visitMessagesRef.current,
+          );
+          if (prescribedMedication) {
+            const medicationKey = normalizeTranscriptText(
+              [
+                prescribedMedication.name,
+                prescribedMedication.dosage,
+                prescribedMedication.frequency,
+              ].join(" "),
+            );
+            if (!savedMedicationInstructionKeysRef.current.has(medicationKey)) {
+              savedMedicationInstructionKeysRef.current.add(medicationKey);
+              const savedMedication = upsertMed(prescribedMedication);
+              updatePatientContext({
+                medications: [
+                  `${savedMedication.name} ${savedMedication.dosage} ${savedMedication.frequency}`
+                    .replace(/\s+/g, " ")
+                    .trim(),
+                ],
+              });
+              toast.success(`Medication updated: ${savedMedication.name}`);
+            }
+          }
+        }
 
         const intentResponse =
           decision.shouldRespond && stageAllowsResponse && (decision.response || carePlanResponse);
@@ -572,7 +610,7 @@ export function DoctorPage() {
 
       return true;
     },
-    [addMedsBuddyVisitMessage, patientContextForVisit, state],
+    [addMedsBuddyVisitMessage, patientContextForVisit, state, updatePatientContext, upsertMed],
   );
 
   const handleSimulatedTranscript = () => {

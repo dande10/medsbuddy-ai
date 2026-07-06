@@ -143,6 +143,7 @@ interface State {
   currentVisitSummary: string | null;
   setProfile: (p: Partial<Profile>) => void;
   addMed: (m: Omit<Medication, "id" | "createdAt">) => void;
+  upsertMed: (m: Omit<Medication, "id" | "createdAt">) => Medication;
   removeMed: (id: string) => void;
   logDose: (medId: string, status: DoseEvent["status"]) => void;
   addSymptom: (s: Omit<Symptom, "id" | "at">) => void;
@@ -171,6 +172,13 @@ interface State {
 }
 
 const id = () => Math.random().toString(36).slice(2, 10);
+
+function medicationNameKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
 
 const defaultProfile: Profile = {
   name: "",
@@ -254,6 +262,26 @@ export const useApp = create<State>()(
       currentVisitSummary: null,
       setProfile: (p) => set({ profile: { ...get().profile, ...p } }),
       addMed: (m) => set({ meds: [...get().meds, { ...m, id: id(), createdAt: Date.now() }] }),
+      upsertMed: (m) => {
+        const incomingKey = medicationNameKey(m.name);
+        const current = get().meds;
+        const existing = current.find((med) => medicationNameKey(med.name) === incomingKey);
+        if (existing) {
+          const updated = {
+            ...existing,
+            name: m.name || existing.name,
+            dosage: m.dosage || existing.dosage,
+            frequency: m.frequency || existing.frequency,
+            times: m.times.length ? m.times : existing.times,
+          };
+          set({ meds: current.map((med) => (med.id === existing.id ? updated : med)) });
+          return updated;
+        }
+
+        const created = { ...m, id: id(), createdAt: Date.now() };
+        set({ meds: [...current, created] });
+        return created;
+      },
       removeMed: (mid) =>
         set({
           meds: get().meds.filter((m) => m.id !== mid),
