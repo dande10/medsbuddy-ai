@@ -13,7 +13,6 @@ backend/*.db
 backend/*.db-*
 __pycache__/
 *.py[cod]
-dist
 dist-ssr
 .output
 .vinxi

@@ -1,0 +1,1 @@
+import{r as e}from"./store-oLasX0-e.js";import{t}from"./app-shell-DduGeIg3.js";import{t as n}from"./index-Br6sMJcW.js";var r=e();function i(){return(0,r.jsx)(t,{children:(0,r.jsx)(n,{})})}export{i as component};

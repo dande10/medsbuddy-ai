@@ -7,8 +7,8 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
-  // Force a Node-server production bundle for self-hosting on Alibaba Cloud.
-  nitro: { preset: "node-server" },
+  // Vercel needs Nitro's Vercel output; Alibaba/self-hosted builds need a Node server.
+  nitro: { preset: process.env.VERCEL ? "vercel" : "node-server" },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
