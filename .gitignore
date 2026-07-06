@@ -16,6 +16,7 @@ __pycache__/
 dist
 dist-ssr
 .output
+.vercel/
 .vinxi
 .tanstack/**
 .nitro
