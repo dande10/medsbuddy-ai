@@ -360,7 +360,7 @@ function buildMedicationHistory(state: ReturnType<typeof useApp.getState>): stri
 }
 
 type DemoStage = "idle" | "active" | "summary";
-type ConversationSpeaker = "Doctor" | "Patient" | "MedsBuddy";
+type ConversationSpeaker = "Doctor" | "Patient" | "MedsBuddy" | "Unknown";
 type SpeakerMode = "Auto" | "Doctor" | "Patient";
 type SpeakerDetectionSource = "elevenlabs_label" | "local_rules" | "llm";
 type SpeakerClassification = {
@@ -544,20 +544,15 @@ function parseTranscriptMessages(
       return [{ speaker: selectedSpeaker, text: cleanedText }];
     }
 
-    const turns = splitTranscriptIntoPossibleTurns(cleanedText);
-    const messages: ConversationMessage[] = [];
-    for (const turn of turns) {
-      const context = [...existingMessages, ...messages];
-      const classification = classifySpeakerFromTranscript(turn, context);
-      messages.push({
-        speaker: classification.speaker,
-        text: turn,
-        speakerConfidence: classification.confidence,
-        speakerReason: classification.reason,
-        speakerSource: classification.source,
-      });
-    }
-    return messages;
+    return [
+      {
+        speaker: "Unknown",
+        text: cleanedText,
+        speakerConfidence: 0,
+        speakerReason: "Awaiting Qwen speaker classification.",
+        speakerSource: "local_rules",
+      },
+    ];
   }
 
   const messages: ConversationMessage[] = [];
@@ -590,14 +585,7 @@ function splitTranscriptIntoPossibleTurns(text: string): string[] {
   const phrases = splitIntoPhrases(text);
   if (phrases.length > 1) return phrases;
 
-  return text
-    .replace(
-      /\b(doctor|patient|medsbuddy)\b\s*/gi,
-      (match) => `\n${match.replace(/\s+/g, " ").trim()} `,
-    )
-    .split(/\n+/)
-    .map((turn) => turn.trim())
-    .filter((turn) => turn.split(/\s+/).length >= 3 || WAKE_WORD_PATTERN.test(turn));
+  return [text].filter((turn) => turn.split(/\s+/).length >= 3 || WAKE_WORD_PATTERN.test(turn));
 }
 
 function splitTranscriptByControlCommands(text: string): string[] {
@@ -736,6 +724,24 @@ function classifySpeakerFromTranscript(
       speaker: "Patient",
       confidence: 0.72,
       reason: "First-person patient statement.",
+      source: "local_rules",
+    };
+  }
+
+  if (/^doctor\b/i.test(clean)) {
+    return {
+      speaker: "Doctor",
+      confidence: 0.78,
+      reason: "Transcript explicitly starts with doctor.",
+      source: "local_rules",
+    };
+  }
+
+  if (looksLikeDoctorQuestionToPatient(text)) {
+    return {
+      speaker: "Doctor",
+      confidence: 0.74,
+      reason: "Doctor-style question or prompt to the patient.",
       source: "local_rules",
     };
   }
@@ -1046,7 +1052,7 @@ function getPatientClarificationQuestion(field: PatientContextRequestField): str
     case "reason for visit":
       return "Vasanthi, what is the main reason for today's visit?";
     case "symptoms":
-      return "Vasanthi, what symptoms would you like me to share with the doctor?";
+      return "Vasanthi, what symptoms should I share with the doctor?";
     case "medications":
       return "Vasanthi, can you confirm your current medications and how often you take them?";
     case "allergies":
@@ -1363,6 +1369,17 @@ function getCarePlanClarificationQuestion(
     );
   }
 
+  if (!hasCarePlanFollowUp(messages) && !hasCarePlanWarningSigns(messages)) {
+    const followUpKey = "care-plan-ask:follow-up";
+    const warningSignsKey = "care-plan-ask:warning-signs";
+    if (handledCarePlanKeys?.has(followUpKey) || handledCarePlanKeys?.has(warningSignsKey)) {
+      return null;
+    }
+    handledCarePlanKeys?.add(followUpKey);
+    handledCarePlanKeys?.add(warningSignsKey);
+    return "Doctor, could you confirm when the patient should follow up and what warning signs should prompt urgent medical attention?";
+  }
+
   if (!hasCarePlanFollowUp(messages)) {
     return askOnce(
       "care-plan-ask:follow-up",
@@ -1431,6 +1448,13 @@ function buildValidatedCarePlanGapResponse(
 
   const question = result.question?.trim();
   if (!question) return null;
+  if (
+    /\b(would you like|drug interactions?|no known|side effects?|rash|itching|diarrhea)\b/i.test(
+      question,
+    )
+  ) {
+    return null;
+  }
 
   const requestedField =
     normalizeCarePlanField(result.nextField) || carePlanFieldFromQuestion(question);
@@ -1468,6 +1492,19 @@ async function buildCarePlanResponseWithQwen({
       instruction,
     );
   if (!hasUsableInstruction) return null;
+
+  const askedFields = getAskedCarePlanFields(handledCarePlanKeys);
+  if (
+    completion.medicationComplete &&
+    !completion.followUpComplete &&
+    !completion.warningSignsComplete &&
+    !askedFields.includes("follow-up") &&
+    !askedFields.includes("warning signs")
+  ) {
+    markCarePlanFieldAsked("follow-up", handledCarePlanKeys);
+    markCarePlanFieldAsked("warning signs", handledCarePlanKeys);
+    return "Doctor, could you confirm when the patient should follow up and what warning signs should prompt urgent medical attention?";
+  }
 
   try {
     const result = await analyzeCarePlanGaps({
@@ -1615,11 +1652,12 @@ function parseSemanticIntentDecision(reply: string): SemanticIntentDecision | nu
       parsed.speaker === "unknown"
         ? parsed.speaker
         : "unknown";
+    const response = typeof parsed.response === "string" ? parsed.response.trim() : "";
     return {
       speaker,
       intent,
       shouldRespond: Boolean(parsed.shouldRespond),
-      response: typeof parsed.response === "string" ? parsed.response.trim() : "",
+      response: sanitizeDoctorVisitAgentResponse(response, intent),
       requestedFields: normalizePatientContextRequestFields(parsed.requestedFields),
       missingFields: normalizePatientContextRequestFields(parsed.missingFields),
       patientClarificationQuestion:
@@ -1631,6 +1669,25 @@ function parseSemanticIntentDecision(reply: string): SemanticIntentDecision | nu
   } catch {
     return null;
   }
+}
+
+function sanitizeDoctorVisitAgentResponse(response: string, intent: AdvocateIntent): string {
+  if (!response) return "";
+  if (
+    /\b(would you like(?: me)?|drug interactions?|no known|side effects?|contraindications?|rash|itching|diarrhea)\b/i.test(
+      response,
+    )
+  ) {
+    return "";
+  }
+  if (intent === "care_plan_instruction") {
+    const allowedCarePlanResponse =
+      /^Doctor, could you confirm\b/i.test(response) ||
+      /^Thank you, Doctor\. I[’']ve updated the patient[’']s care plan\.?$/i.test(response) ||
+      /^No further questions, Doctor\./i.test(response);
+    return allowedCarePlanResponse ? response : "";
+  }
+  return response;
 }
 
 function normalizePatientContextRequestFields(fields: unknown): PatientContextRequestField[] {
@@ -1782,7 +1839,7 @@ function buildVisitOpeningMessages(): ConversationMessage[] {
   return [
     {
       speaker: "MedsBuddy",
-      text: "Thank you, Doctor. I'll monitor today's conversation and automatically assist whenever I can answer using the patient's approved information or help clarify the care plan.",
+      text: "Thank you, Doctor. I’ll stay quiet unless you ask me a question or a care-plan detail needs clarification.",
     },
   ];
 }

@@ -17,6 +17,7 @@ import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as EmergencyRouteImport } from './routes/emergency'
 import { Route as DoctorRouteImport } from './routes/doctor'
 import { Route as CaregiverRouteImport } from './routes/caregiver'
+import { Route as ArchitectureRouteImport } from './routes/architecture'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TalkIndexRouteImport } from './routes/talk.index'
 import { Route as DoctorIndexRouteImport } from './routes/doctor.index'
@@ -66,6 +67,11 @@ const CaregiverRoute = CaregiverRouteImport.update({
   path: '/caregiver',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ArchitectureRoute = ArchitectureRouteImport.update({
+  id: '/architecture',
+  path: '/architecture',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -109,6 +115,7 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/architecture': typeof ArchitectureRoute
   '/caregiver': typeof CaregiverRoute
   '/doctor': typeof DoctorRouteWithChildren
   '/emergency': typeof EmergencyRoute
@@ -127,6 +134,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/architecture': typeof ArchitectureRoute
   '/caregiver': typeof CaregiverRoute
   '/emergency': typeof EmergencyRoute
   '/memory': typeof MemoryRoute
@@ -144,6 +152,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/architecture': typeof ArchitectureRoute
   '/caregiver': typeof CaregiverRoute
   '/doctor': typeof DoctorRouteWithChildren
   '/emergency': typeof EmergencyRoute
@@ -164,6 +173,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/architecture'
     | '/caregiver'
     | '/doctor'
     | '/emergency'
@@ -182,6 +192,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/architecture'
     | '/caregiver'
     | '/emergency'
     | '/memory'
@@ -198,6 +209,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/architecture'
     | '/caregiver'
     | '/doctor'
     | '/emergency'
@@ -217,6 +229,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ArchitectureRoute: typeof ArchitectureRoute
   CaregiverRoute: typeof CaregiverRoute
   DoctorRoute: typeof DoctorRouteWithChildren
   EmergencyRoute: typeof EmergencyRoute
@@ -287,6 +300,13 @@ declare module '@tanstack/react-router' {
       path: '/caregiver'
       fullPath: '/caregiver'
       preLoaderRoute: typeof CaregiverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/architecture': {
+      id: '/architecture'
+      path: '/architecture'
+      fullPath: '/architecture'
+      preLoaderRoute: typeof ArchitectureRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -373,6 +393,7 @@ const TalkRouteWithChildren = TalkRoute._addFileChildren(TalkRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ArchitectureRoute: ArchitectureRoute,
   CaregiverRoute: CaregiverRoute,
   DoctorRoute: DoctorRouteWithChildren,
   EmergencyRoute: EmergencyRoute,

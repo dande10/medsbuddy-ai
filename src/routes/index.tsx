@@ -10,13 +10,13 @@ import {
   Mic,
   FileText,
   QrCode,
-  Plus,
   ChevronRight,
   ShieldCheck,
   AlertTriangle,
   CheckCircle2,
   CloudOff,
   Check,
+  Network,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
@@ -110,7 +110,7 @@ function Home() {
         <QuickAction to="/talk" icon={Mic} label="Ask" />
         <QuickAction to="/doctor" icon={FileText} label="Speak" sub="For me" />
         <QuickAction to="/emergency" icon={QrCode} label="SOS" danger />
-        <QuickAction to="/symptoms" icon={Plus} label="Symptom" />
+        <QuickAction to="/architecture" icon={Network} label="Arch" sub="Judges" />
       </div>
 
       {/* OFFLINE READY CARD */}
@@ -285,7 +285,7 @@ function QuickAction({
   sub,
   danger,
 }: {
-  to: "/talk" | "/doctor" | "/emergency" | "/memory" | "/symptoms";
+  to: "/talk" | "/doctor" | "/emergency" | "/memory" | "/symptoms" | "/architecture";
   icon: typeof Mic;
   label: string;
   sub?: string;

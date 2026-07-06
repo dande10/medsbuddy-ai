@@ -8,7 +8,6 @@ import {
   logNavigationIntent,
 } from "@/lib/nav-commands";
 import {
-  chatWithMedsBuddy,
   extractPatientContext,
   routeMedsBuddyAgent,
   type AgentRouterResult,
@@ -36,49 +35,6 @@ const SUGGESTIONS = [
   "I have a symptom I want to remember",
   "Help me prepare for my doctor visit",
 ];
-
-function buildSystemPrompt(state: ReturnType<typeof useApp.getState>): string {
-  const { profile, meds, doses, symptoms } = state;
-  const recentDoses = doses
-    .slice(0, 10)
-    .map((d) => `${d.medName} was ${d.status}`)
-    .join("; ");
-  const recentSymp = symptoms
-    .slice(0, 8)
-    .map((s) => s.name)
-    .filter((name, index, all) => all.indexOf(name) === index)
-    .join("; ");
-  return [
-    "You are MedsBuddy, an AI Patient Advocate — a caring healthcare companion, not a chatbot, assistant, search engine, or registration form.",
-    "",
-    "## Identity & purpose",
-    "Name: MedsBuddy. Role: AI Patient Advocate.",
-    "Mission: help the patient remember important health information, track symptoms, organize medications, prepare for doctor visits, and feel supported throughout their healthcare journey.",
-    "When the patient asks who or what you are, proactively explain your purpose in warm, human language.",
-    "",
-    "## Voice & personality",
-    "Sound like a kind person talking, not a report, chart note, checklist, or medical article.",
-    "Use 2–3 short sentences by default. Avoid markdown, bullet symbols, timestamps, severity labels, emojis, and long lists unless the patient asks.",
-    "Start with empathy, then give one clear next step or one gentle question.",
-    "Do not say you added, logged, saved, or made a note of something. The app can track quietly in the background.",
-    "Never say you cannot navigate screens, pages, tabs, or the app interface. MedsBuddy is inside the app and can help the patient use app flows when asked.",
-    "If the patient asks to prepare for a doctor visit, help immediately: summarize the main concern, ask one short follow-up question, and explain that the Doctor Visit page will use the approved context.",
-    "",
-    "## Proactive care",
-    "Acknowledge symptoms warmly. If a symptom is mentioned, you may say you can help track it, but do not announce internal logging details unless the patient asks.",
-    "For possible causes, give a short, careful answer and suggest checking with a clinician when symptoms are severe, new, worsening, or concerning.",
-    "",
-    "## Boundaries",
-    "You are not a doctor. For urgent or life-threatening symptoms, kindly tell the patient to call emergency services.",
-    "Use the patient context below — never invent medications or symptoms.",
-    "",
-    "## Patient context",
-    `Patient: ${profile.name || "Unknown"}, DOB ${profile.dob || "?"}, allergies: ${profile.allergies || "none recorded"}, conditions: ${profile.conditions || "none recorded"}.`,
-    `Medications: ${meds.map((m) => `${m.name} ${m.dosage} (${m.frequency})`).join("; ") || "none"}.`,
-    `Recent doses: ${recentDoses || "none"}.`,
-    `Recent symptoms: ${recentSymp || "none"}.`,
-  ].join("\n");
-}
 
 function isMeaningfulPatientContextMessage(text: string): boolean {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -194,34 +150,6 @@ function unique(values: string[]): string[] {
   return result;
 }
 
-function humanizeAssistantReply(reply: string): string {
-  const withoutNoteLanguage = reply
-    .replace(/\*\*/g, "")
-    .replace(/\*/g, "")
-    .replace(/^Of course\s+[—-]\s*/i, "")
-    .replace(
-      /\b(?:just to clarify,?\s*)?I\s+(?:do not|don't)\s+navigate\s+(?:screens|pages|tabs|the app interface)[^.!?]*(?:[.!?]\s*)?/gi,
-      "",
-    )
-    .replace(/\bWhat I can do is\s+help you prepare\b/gi, "I can help you prepare")
-    .replace(
-      /\b(?:I[’']ve|I have)\s+(?:added|logged|saved|made a note of)\b[^.!?]*(?:[.!?]\s*)?/gi,
-      "",
-    )
-    .replace(/\(?\b\d{1,2}\/\d{1,2}\/\d{4},?\s+\d{1,2}:\d{2}\s*(?:AM|PM)?[^)]*\)?/gi, "")
-    .replace(/\bseverity\s+\d+\s*(?:\([^)]+\))?/gi, "")
-    .replace(/(?:^|\n)\s*(?:-|◆|🔹)\s*/gu, " ")
-    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const sentences = withoutNoteLanguage.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [withoutNoteLanguage];
-  const shortReply = sentences.slice(0, 3).join(" ").trim();
-  const words = shortReply.split(/\s+/).filter(Boolean);
-  if (words.length <= 85) return shortReply;
-  return `${words.slice(0, 85).join(" ")}.`;
-}
-
 function buildOfflineReply(text: string, state: ReturnType<typeof useApp.getState>): string {
   const lower = text.toLowerCase();
   const { meds, symptoms, visits } = state;
@@ -259,40 +187,6 @@ function buildOfflineReply(text: string, state: ReturnType<typeof useApp.getStat
   }
 
   return "I'm offline, but I can still talk. I can help with saved medications, symptoms, SOS QR, and doctor visit summaries on this device.";
-}
-
-function buildFastLocalReply(text: string): string | null {
-  const normalized = text
-    .toLowerCase()
-    .replace(/[^\w\s]/g, "")
-    .trim();
-  if (
-    /^(hi|hello|hey|how are you|how are you today|good morning|good afternoon)$/.test(normalized)
-  ) {
-    return "I'm here and ready to help. I can support medication questions, symptoms, doctor visits, and visit summaries.";
-  }
-  if (/\b(who are you|what are you|what can you do|help me)\b/.test(normalized)) {
-    return "I'm MedsBuddy, your AI Patient Advocate. I help remember health details, prepare for doctor visits, and summarize care instructions.";
-  }
-  if (/\b(prepare|prep|ready).*\b(doctor|visit|appointment)\b|\bdoctor visit\b/.test(normalized)) {
-    return "I can help prepare for the visit. Tell me the main symptom, when it started, current medications, and the top question you want the doctor to answer.";
-  }
-  if (/\b(thank you|thanks)\b/.test(normalized)) {
-    return "You're welcome. I'm here whenever you need help with medications, symptoms, or doctor visit notes.";
-  }
-  return null;
-}
-
-function isAcknowledgementOnly(text: string): boolean {
-  const normalized = text
-    .toLowerCase()
-    .replace(/[^\w\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!normalized) return false;
-  return /^(ok|okay|awesome|great|sounds good|good|nice|perfect|cool|got it|thank you|thanks|yes|yeah|yep|sure|alright|all right)(\s+(ok|okay|awesome|great|good|nice|perfect|cool|thanks|thank you))*$/.test(
-    normalized,
-  );
 }
 
 type AgentDataRecord = Record<string, unknown>;
@@ -359,12 +253,16 @@ function findMedicationMention(
 
 function normalizeAgentSymptomItems(items: unknown[], fallbackText: string) {
   return items
-    .map((item) => asRecord(item))
-    .map((record) => ({
-      name: stringValue(record.name || record.symptomName),
-      notes: stringValue(record.notes || fallbackText),
-      severity: normalizeSeverity(record.severity),
-    }))
+    .map((item) => {
+      const record = asRecord(item);
+      return {
+        name: stringValue(record.name || record.symptomName || item),
+        notes: stringValue(record.notes || fallbackText),
+        onset: stringValue(record.onset),
+        duration: stringValue(record.duration),
+        severity: normalizeSeverity(record.severity),
+      };
+    })
     .filter((symptom) => symptom.name);
 }
 
@@ -686,21 +584,28 @@ function TalkThreadPage() {
       }
 
       if (action === "doctor_visit_prep") {
-        const prepSymptoms = unique(arrayValue(data.symptoms).map((item) => stringValue(item)));
+        const symptomItems = normalizeAgentSymptomItems(arrayValue(data.symptoms), text);
+        const prepSymptoms = unique(symptomItems.map((symptom) => symptom.name));
         const concerns = unique(arrayValue(data.concerns).map((item) => stringValue(item)));
         const questionsForDoctor = unique(
           arrayValue(data.questionsForDoctor).map((item) => stringValue(item)),
         );
         const visitReason = stringValue(data.visitReason || data.reasonForVisit);
-        const timeline = stringValue(data.timeline || data.onset || data.duration);
+        const onset =
+          stringValue(data.onset) || symptomItems.find((symptom) => symptom.onset)?.onset || "";
+        const duration =
+          stringValue(data.duration) ||
+          symptomItems.find((symptom) => symptom.duration)?.duration ||
+          "";
+        const timeline = stringValue(data.timeline || onset || duration);
         const patientNotes = unique(arrayValue(data.patientNotes).map((item) => stringValue(item)));
 
         updateCurrentVisitPatientContext(
           {
             symptoms: prepSymptoms,
             visitReason,
-            onset: stringValue(data.onset),
-            duration: stringValue(data.duration || data.timeline),
+            onset,
+            duration: duration || timeline,
             patientNotes,
             concerns,
             questionsForDoctor,
@@ -725,6 +630,11 @@ function TalkThreadPage() {
         reply = savedPrep.length
           ? "I've updated your pre-visit summary and will use it for today's doctor visit."
           : "I've updated your doctor-visit summary with that information.";
+
+        const to = routeFromAgent(stringValue(decision.navigateTo || data.navigateTo));
+        if (to === "/doctor") {
+          navigate({ to });
+        }
       }
 
       if (action === "generate_doctor_visit_summary") {
@@ -767,10 +677,6 @@ function TalkThreadPage() {
     };
 
     const stateBeforeContextUpdate = useApp.getState();
-    if (isAcknowledgementOnly(text)) {
-      await speakAndContinue("Great. I’ll keep that ready for your doctor visit.");
-      return;
-    }
 
     if (!offline) {
       try {
@@ -790,7 +696,7 @@ function TalkThreadPage() {
         await applyAgentAction(routed.result ?? { action: "answer", response: "" });
         return;
       } catch (error) {
-        console.info("Agent router unavailable, using fallback chat.", error);
+        console.info("Agent router unavailable.", error);
       }
     }
 
@@ -843,40 +749,13 @@ function TalkThreadPage() {
         });
     }
 
-    const fastReply = buildFastLocalReply(text);
-    if (fastReply) {
-      await speakAndContinue(fastReply);
-      return;
-    }
-
     if (offline) {
       const offlineReply = buildOfflineReply(text, useApp.getState());
       await speakAndContinue(offlineReply);
       return;
     }
 
-    try {
-      const state = useApp.getState();
-      const sys = buildSystemPrompt(state);
-      const current = state.threads.find((t) => t.id === thread.id);
-      const history = (current?.messages ?? []).slice(-6).map((m) => ({
-        role: m.role,
-        content: m.role === "assistant" ? humanizeAssistantReply(m.content) : m.content,
-      }));
-      const { reply } = await chatWithMedsBuddy({
-        messages: [
-          { role: "system" as const, content: sys },
-          ...history,
-          { role: "user" as const, content: text },
-        ],
-      });
-      const finalReply = humanizeAssistantReply(reply);
-      await speakAndContinue(finalReply);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Could not reach the AI.";
-      appendToThread(thread.id, { role: "assistant", content: `Sorry — ${msg}` });
-      setBusy(false);
-    }
+    await speakAndContinue("I could not reach the MedsBuddy agent. Please try again in a moment.");
   };
 
   if (!hydrated || !thread) {
