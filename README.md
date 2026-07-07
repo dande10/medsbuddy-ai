@@ -15,7 +15,7 @@ See `docs/DEVPOST_SUBMISSION.md` for the copy-paste Devpost pitch, demo video sc
 
 - **Public repository:** `https://github.com/dande10/medsbuddy-ai`
 - **License:** MIT, included at `LICENSE`
-- **Architecture diagram:** `docs/architecture.mmd` and the in-app `/architecture` route
+- **Architecture diagram:** `docs/architecture-diagram.pdf`, `docs/architecture.mmd`, and the in-app `/architecture` route
 - **Deployment proof guide:** `docs/ALIBABA_ECS_FASTAPI_DEPLOYMENT.md`
 - **Qwen / Alibaba proof guide:** `docs/HACKATHON_QWEN_CLOUD_PROOF.md`
 
@@ -55,7 +55,7 @@ flowchart LR
   frontend -. Advocate + Summarize .-> doctor
 ```
 
-The same diagram is available as `docs/architecture.mmd`.
+The same diagram is available as `docs/architecture-diagram.pdf` for upload, with editable Mermaid source in `docs/architecture.mmd`.
 
 ## Qwen Cloud Integration
 

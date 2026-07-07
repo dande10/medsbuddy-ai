@@ -75,7 +75,7 @@ Keep the video under 3 minutes. Focus on the agent acting during the visit, not 
 
 ## Architecture Diagram
 
-Use the in-app `/architecture` page during judging, and include this diagram in the written submission:
+Upload `docs/architecture-diagram.pdf` for the required architecture diagram. Use the in-app `/architecture` page during judging, and include this flow in the written submission:
 
 ```text
 Patient
@@ -152,7 +152,8 @@ Video demo:
 
 Architecture:
 
-- Use `docs/architecture.mmd`.
+- Upload `docs/architecture-diagram.pdf`.
+- Keep `docs/architecture.mmd` as editable source.
 - Use the in-app `/architecture` page.
 
 Written summary:
@@ -204,7 +205,7 @@ The repo includes a Dockerfile, MIT license, Qwen proof endpoint, architecture d
 - MIT license included.
 - README explains Qwen Cloud integration.
 - Devpost description uses Track 4: Autopilot Agent.
-- Architecture diagram included.
+- Architecture diagram PDF included at `docs/architecture-diagram.pdf`.
 - Qwen proof endpoint works.
 - Alibaba Cloud deployment URL included.
 - Demo video is public and under 3 minutes.
