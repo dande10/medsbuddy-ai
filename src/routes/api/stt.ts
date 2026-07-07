@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { proxyEcsRequest } from "@/lib/ecs-proxy";
 
 type ElevenLabsSttResponse = {
   text?: string;
@@ -64,7 +65,7 @@ export const Route = createFileRoute("/api/stt")({
     handlers: {
       POST: async ({ request }) => {
         const key = process.env.ELEVENLABS_API_KEY?.trim();
-        if (!key) return new Response("Missing ELEVENLABS_API_KEY", { status: 500 });
+        if (!key) return proxyEcsRequest(request, "/api/stt");
 
         const requestContentType = request.headers.get("content-type") ?? "";
         const incoming = await request.formData().catch(() => null);

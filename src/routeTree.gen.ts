@@ -26,6 +26,17 @@ import { Route as ApiTtsRouteImport } from './routes/api/tts'
 import { Route as ApiSttRouteImport } from './routes/api/stt'
 import { Route as ApiQwenProofRouteImport } from './routes/api/qwen-proof'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiMedsbuddySaveMemoryRouteImport } from './routes/api/medsbuddy/save-memory'
+import { Route as ApiMedsbuddyHumanizePrevisitSummaryRouteImport } from './routes/api/medsbuddy/humanize-previsit-summary'
+import { Route as ApiMedsbuddyGenerateSummaryRouteImport } from './routes/api/medsbuddy/generate-summary'
+import { Route as ApiMedsbuddyExtractPatientContextRouteImport } from './routes/api/medsbuddy/extract-patient-context'
+import { Route as ApiMedsbuddyDoctorHandoffRouteImport } from './routes/api/medsbuddy/doctor-handoff'
+import { Route as ApiMedsbuddyClarificationCheckRouteImport } from './routes/api/medsbuddy/clarification-check'
+import { Route as ApiMedsbuddyChatRouteImport } from './routes/api/medsbuddy/chat'
+import { Route as ApiMedsbuddyCarePlanGapRouteImport } from './routes/api/medsbuddy/care-plan-gap'
+import { Route as ApiMedsbuddyAskMemoryRouteImport } from './routes/api/medsbuddy/ask-memory'
+import { Route as ApiMedsbuddyAnalyzeTranscriptRouteImport } from './routes/api/medsbuddy/analyze-transcript'
+import { Route as ApiMedsbuddyAgentRouterRouteImport } from './routes/api/medsbuddy/agent-router'
 
 const TalkRoute = TalkRouteImport.update({
   id: '/talk',
@@ -112,6 +123,67 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMedsbuddySaveMemoryRoute = ApiMedsbuddySaveMemoryRouteImport.update({
+  id: '/api/medsbuddy/save-memory',
+  path: '/api/medsbuddy/save-memory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMedsbuddyHumanizePrevisitSummaryRoute =
+  ApiMedsbuddyHumanizePrevisitSummaryRouteImport.update({
+    id: '/api/medsbuddy/humanize-previsit-summary',
+    path: '/api/medsbuddy/humanize-previsit-summary',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiMedsbuddyGenerateSummaryRoute =
+  ApiMedsbuddyGenerateSummaryRouteImport.update({
+    id: '/api/medsbuddy/generate-summary',
+    path: '/api/medsbuddy/generate-summary',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiMedsbuddyExtractPatientContextRoute =
+  ApiMedsbuddyExtractPatientContextRouteImport.update({
+    id: '/api/medsbuddy/extract-patient-context',
+    path: '/api/medsbuddy/extract-patient-context',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiMedsbuddyDoctorHandoffRoute =
+  ApiMedsbuddyDoctorHandoffRouteImport.update({
+    id: '/api/medsbuddy/doctor-handoff',
+    path: '/api/medsbuddy/doctor-handoff',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiMedsbuddyClarificationCheckRoute =
+  ApiMedsbuddyClarificationCheckRouteImport.update({
+    id: '/api/medsbuddy/clarification-check',
+    path: '/api/medsbuddy/clarification-check',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiMedsbuddyChatRoute = ApiMedsbuddyChatRouteImport.update({
+  id: '/api/medsbuddy/chat',
+  path: '/api/medsbuddy/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMedsbuddyCarePlanGapRoute = ApiMedsbuddyCarePlanGapRouteImport.update({
+  id: '/api/medsbuddy/care-plan-gap',
+  path: '/api/medsbuddy/care-plan-gap',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMedsbuddyAskMemoryRoute = ApiMedsbuddyAskMemoryRouteImport.update({
+  id: '/api/medsbuddy/ask-memory',
+  path: '/api/medsbuddy/ask-memory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMedsbuddyAnalyzeTranscriptRoute =
+  ApiMedsbuddyAnalyzeTranscriptRouteImport.update({
+    id: '/api/medsbuddy/analyze-transcript',
+    path: '/api/medsbuddy/analyze-transcript',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiMedsbuddyAgentRouterRoute = ApiMedsbuddyAgentRouterRouteImport.update({
+  id: '/api/medsbuddy/agent-router',
+  path: '/api/medsbuddy/agent-router',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -131,6 +203,17 @@ export interface FileRoutesByFullPath {
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/doctor/': typeof DoctorIndexRoute
   '/talk/': typeof TalkIndexRoute
+  '/api/medsbuddy/agent-router': typeof ApiMedsbuddyAgentRouterRoute
+  '/api/medsbuddy/analyze-transcript': typeof ApiMedsbuddyAnalyzeTranscriptRoute
+  '/api/medsbuddy/ask-memory': typeof ApiMedsbuddyAskMemoryRoute
+  '/api/medsbuddy/care-plan-gap': typeof ApiMedsbuddyCarePlanGapRoute
+  '/api/medsbuddy/chat': typeof ApiMedsbuddyChatRoute
+  '/api/medsbuddy/clarification-check': typeof ApiMedsbuddyClarificationCheckRoute
+  '/api/medsbuddy/doctor-handoff': typeof ApiMedsbuddyDoctorHandoffRoute
+  '/api/medsbuddy/extract-patient-context': typeof ApiMedsbuddyExtractPatientContextRoute
+  '/api/medsbuddy/generate-summary': typeof ApiMedsbuddyGenerateSummaryRoute
+  '/api/medsbuddy/humanize-previsit-summary': typeof ApiMedsbuddyHumanizePrevisitSummaryRoute
+  '/api/medsbuddy/save-memory': typeof ApiMedsbuddySaveMemoryRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -148,6 +231,17 @@ export interface FileRoutesByTo {
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/doctor': typeof DoctorIndexRoute
   '/talk': typeof TalkIndexRoute
+  '/api/medsbuddy/agent-router': typeof ApiMedsbuddyAgentRouterRoute
+  '/api/medsbuddy/analyze-transcript': typeof ApiMedsbuddyAnalyzeTranscriptRoute
+  '/api/medsbuddy/ask-memory': typeof ApiMedsbuddyAskMemoryRoute
+  '/api/medsbuddy/care-plan-gap': typeof ApiMedsbuddyCarePlanGapRoute
+  '/api/medsbuddy/chat': typeof ApiMedsbuddyChatRoute
+  '/api/medsbuddy/clarification-check': typeof ApiMedsbuddyClarificationCheckRoute
+  '/api/medsbuddy/doctor-handoff': typeof ApiMedsbuddyDoctorHandoffRoute
+  '/api/medsbuddy/extract-patient-context': typeof ApiMedsbuddyExtractPatientContextRoute
+  '/api/medsbuddy/generate-summary': typeof ApiMedsbuddyGenerateSummaryRoute
+  '/api/medsbuddy/humanize-previsit-summary': typeof ApiMedsbuddyHumanizePrevisitSummaryRoute
+  '/api/medsbuddy/save-memory': typeof ApiMedsbuddySaveMemoryRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -168,6 +262,17 @@ export interface FileRoutesById {
   '/talk/$threadId': typeof TalkThreadIdRoute
   '/doctor/': typeof DoctorIndexRoute
   '/talk/': typeof TalkIndexRoute
+  '/api/medsbuddy/agent-router': typeof ApiMedsbuddyAgentRouterRoute
+  '/api/medsbuddy/analyze-transcript': typeof ApiMedsbuddyAnalyzeTranscriptRoute
+  '/api/medsbuddy/ask-memory': typeof ApiMedsbuddyAskMemoryRoute
+  '/api/medsbuddy/care-plan-gap': typeof ApiMedsbuddyCarePlanGapRoute
+  '/api/medsbuddy/chat': typeof ApiMedsbuddyChatRoute
+  '/api/medsbuddy/clarification-check': typeof ApiMedsbuddyClarificationCheckRoute
+  '/api/medsbuddy/doctor-handoff': typeof ApiMedsbuddyDoctorHandoffRoute
+  '/api/medsbuddy/extract-patient-context': typeof ApiMedsbuddyExtractPatientContextRoute
+  '/api/medsbuddy/generate-summary': typeof ApiMedsbuddyGenerateSummaryRoute
+  '/api/medsbuddy/humanize-previsit-summary': typeof ApiMedsbuddyHumanizePrevisitSummaryRoute
+  '/api/medsbuddy/save-memory': typeof ApiMedsbuddySaveMemoryRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -189,6 +294,17 @@ export interface FileRouteTypes {
     | '/talk/$threadId'
     | '/doctor/'
     | '/talk/'
+    | '/api/medsbuddy/agent-router'
+    | '/api/medsbuddy/analyze-transcript'
+    | '/api/medsbuddy/ask-memory'
+    | '/api/medsbuddy/care-plan-gap'
+    | '/api/medsbuddy/chat'
+    | '/api/medsbuddy/clarification-check'
+    | '/api/medsbuddy/doctor-handoff'
+    | '/api/medsbuddy/extract-patient-context'
+    | '/api/medsbuddy/generate-summary'
+    | '/api/medsbuddy/humanize-previsit-summary'
+    | '/api/medsbuddy/save-memory'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -206,6 +322,17 @@ export interface FileRouteTypes {
     | '/talk/$threadId'
     | '/doctor'
     | '/talk'
+    | '/api/medsbuddy/agent-router'
+    | '/api/medsbuddy/analyze-transcript'
+    | '/api/medsbuddy/ask-memory'
+    | '/api/medsbuddy/care-plan-gap'
+    | '/api/medsbuddy/chat'
+    | '/api/medsbuddy/clarification-check'
+    | '/api/medsbuddy/doctor-handoff'
+    | '/api/medsbuddy/extract-patient-context'
+    | '/api/medsbuddy/generate-summary'
+    | '/api/medsbuddy/humanize-previsit-summary'
+    | '/api/medsbuddy/save-memory'
   id:
     | '__root__'
     | '/'
@@ -225,6 +352,17 @@ export interface FileRouteTypes {
     | '/talk/$threadId'
     | '/doctor/'
     | '/talk/'
+    | '/api/medsbuddy/agent-router'
+    | '/api/medsbuddy/analyze-transcript'
+    | '/api/medsbuddy/ask-memory'
+    | '/api/medsbuddy/care-plan-gap'
+    | '/api/medsbuddy/chat'
+    | '/api/medsbuddy/clarification-check'
+    | '/api/medsbuddy/doctor-handoff'
+    | '/api/medsbuddy/extract-patient-context'
+    | '/api/medsbuddy/generate-summary'
+    | '/api/medsbuddy/humanize-previsit-summary'
+    | '/api/medsbuddy/save-memory'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -242,6 +380,17 @@ export interface RootRouteChildren {
   ApiQwenProofRoute: typeof ApiQwenProofRoute
   ApiSttRoute: typeof ApiSttRoute
   ApiTtsRoute: typeof ApiTtsRoute
+  ApiMedsbuddyAgentRouterRoute: typeof ApiMedsbuddyAgentRouterRoute
+  ApiMedsbuddyAnalyzeTranscriptRoute: typeof ApiMedsbuddyAnalyzeTranscriptRoute
+  ApiMedsbuddyAskMemoryRoute: typeof ApiMedsbuddyAskMemoryRoute
+  ApiMedsbuddyCarePlanGapRoute: typeof ApiMedsbuddyCarePlanGapRoute
+  ApiMedsbuddyChatRoute: typeof ApiMedsbuddyChatRoute
+  ApiMedsbuddyClarificationCheckRoute: typeof ApiMedsbuddyClarificationCheckRoute
+  ApiMedsbuddyDoctorHandoffRoute: typeof ApiMedsbuddyDoctorHandoffRoute
+  ApiMedsbuddyExtractPatientContextRoute: typeof ApiMedsbuddyExtractPatientContextRoute
+  ApiMedsbuddyGenerateSummaryRoute: typeof ApiMedsbuddyGenerateSummaryRoute
+  ApiMedsbuddyHumanizePrevisitSummaryRoute: typeof ApiMedsbuddyHumanizePrevisitSummaryRoute
+  ApiMedsbuddySaveMemoryRoute: typeof ApiMedsbuddySaveMemoryRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -365,6 +514,83 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/medsbuddy/save-memory': {
+      id: '/api/medsbuddy/save-memory'
+      path: '/api/medsbuddy/save-memory'
+      fullPath: '/api/medsbuddy/save-memory'
+      preLoaderRoute: typeof ApiMedsbuddySaveMemoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/medsbuddy/humanize-previsit-summary': {
+      id: '/api/medsbuddy/humanize-previsit-summary'
+      path: '/api/medsbuddy/humanize-previsit-summary'
+      fullPath: '/api/medsbuddy/humanize-previsit-summary'
+      preLoaderRoute: typeof ApiMedsbuddyHumanizePrevisitSummaryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/medsbuddy/generate-summary': {
+      id: '/api/medsbuddy/generate-summary'
+      path: '/api/medsbuddy/generate-summary'
+      fullPath: '/api/medsbuddy/generate-summary'
+      preLoaderRoute: typeof ApiMedsbuddyGenerateSummaryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/medsbuddy/extract-patient-context': {
+      id: '/api/medsbuddy/extract-patient-context'
+      path: '/api/medsbuddy/extract-patient-context'
+      fullPath: '/api/medsbuddy/extract-patient-context'
+      preLoaderRoute: typeof ApiMedsbuddyExtractPatientContextRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/medsbuddy/doctor-handoff': {
+      id: '/api/medsbuddy/doctor-handoff'
+      path: '/api/medsbuddy/doctor-handoff'
+      fullPath: '/api/medsbuddy/doctor-handoff'
+      preLoaderRoute: typeof ApiMedsbuddyDoctorHandoffRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/medsbuddy/clarification-check': {
+      id: '/api/medsbuddy/clarification-check'
+      path: '/api/medsbuddy/clarification-check'
+      fullPath: '/api/medsbuddy/clarification-check'
+      preLoaderRoute: typeof ApiMedsbuddyClarificationCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/medsbuddy/chat': {
+      id: '/api/medsbuddy/chat'
+      path: '/api/medsbuddy/chat'
+      fullPath: '/api/medsbuddy/chat'
+      preLoaderRoute: typeof ApiMedsbuddyChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/medsbuddy/care-plan-gap': {
+      id: '/api/medsbuddy/care-plan-gap'
+      path: '/api/medsbuddy/care-plan-gap'
+      fullPath: '/api/medsbuddy/care-plan-gap'
+      preLoaderRoute: typeof ApiMedsbuddyCarePlanGapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/medsbuddy/ask-memory': {
+      id: '/api/medsbuddy/ask-memory'
+      path: '/api/medsbuddy/ask-memory'
+      fullPath: '/api/medsbuddy/ask-memory'
+      preLoaderRoute: typeof ApiMedsbuddyAskMemoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/medsbuddy/analyze-transcript': {
+      id: '/api/medsbuddy/analyze-transcript'
+      path: '/api/medsbuddy/analyze-transcript'
+      fullPath: '/api/medsbuddy/analyze-transcript'
+      preLoaderRoute: typeof ApiMedsbuddyAnalyzeTranscriptRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/medsbuddy/agent-router': {
+      id: '/api/medsbuddy/agent-router'
+      path: '/api/medsbuddy/agent-router'
+      fullPath: '/api/medsbuddy/agent-router'
+      preLoaderRoute: typeof ApiMedsbuddyAgentRouterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -406,6 +632,19 @@ const rootRouteChildren: RootRouteChildren = {
   ApiQwenProofRoute: ApiQwenProofRoute,
   ApiSttRoute: ApiSttRoute,
   ApiTtsRoute: ApiTtsRoute,
+  ApiMedsbuddyAgentRouterRoute: ApiMedsbuddyAgentRouterRoute,
+  ApiMedsbuddyAnalyzeTranscriptRoute: ApiMedsbuddyAnalyzeTranscriptRoute,
+  ApiMedsbuddyAskMemoryRoute: ApiMedsbuddyAskMemoryRoute,
+  ApiMedsbuddyCarePlanGapRoute: ApiMedsbuddyCarePlanGapRoute,
+  ApiMedsbuddyChatRoute: ApiMedsbuddyChatRoute,
+  ApiMedsbuddyClarificationCheckRoute: ApiMedsbuddyClarificationCheckRoute,
+  ApiMedsbuddyDoctorHandoffRoute: ApiMedsbuddyDoctorHandoffRoute,
+  ApiMedsbuddyExtractPatientContextRoute:
+    ApiMedsbuddyExtractPatientContextRoute,
+  ApiMedsbuddyGenerateSummaryRoute: ApiMedsbuddyGenerateSummaryRoute,
+  ApiMedsbuddyHumanizePrevisitSummaryRoute:
+    ApiMedsbuddyHumanizePrevisitSummaryRoute,
+  ApiMedsbuddySaveMemoryRoute: ApiMedsbuddySaveMemoryRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { proxyEcsRequest } from "@/lib/ecs-proxy";
 
 export const Route = createFileRoute("/api/tts")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         const key = process.env.ELEVENLABS_API_KEY?.trim();
-        if (!key) return new Response("Missing ELEVENLABS_API_KEY", { status: 500 });
+        if (!key) return proxyEcsRequest(request, "/api/tts");
         const body = (await request.json().catch(() => null)) as {
           text?: string;
           voiceId?: string;

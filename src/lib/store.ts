@@ -181,14 +181,36 @@ function medicationNameKey(name: string): string {
 }
 
 const defaultProfile: Profile = {
-  name: "",
-  dob: "",
-  bloodGroup: "",
-  allergies: "",
-  conditions: "",
-  emergencyContacts: [],
-  primaryPhysician: "",
+  name: "Vasanthi Dande",
+  dob: "1992-04-12",
+  bloodGroup: "O+",
+  allergies: "No known drug allergies",
+  conditions: "Pregnancy",
+  emergencyContacts: [
+    {
+      name: "Dande Family Contact",
+      phone: "+1 555-010-2026",
+      relation: "Family",
+    },
+  ],
+  primaryPhysician: "Dr. Rao",
 };
+
+function withDemoProfileDefaults(profile?: Partial<Profile>): Profile {
+  return {
+    ...defaultProfile,
+    ...(profile ?? {}),
+    name: profile?.name?.trim() || defaultProfile.name,
+    dob: profile?.dob?.trim() || defaultProfile.dob,
+    bloodGroup: profile?.bloodGroup?.trim() || defaultProfile.bloodGroup,
+    allergies: profile?.allergies?.trim() || defaultProfile.allergies,
+    conditions: profile?.conditions?.trim() || defaultProfile.conditions,
+    emergencyContacts: profile?.emergencyContacts?.length
+      ? profile.emergencyContacts
+      : defaultProfile.emergencyContacts,
+    primaryPhysician: profile?.primaryPhysician?.trim() || defaultProfile.primaryPhysician,
+  };
+}
 
 const defaultPatientContext: PatientContext = {
   symptoms: [],
@@ -245,7 +267,7 @@ function filterKeywordList(values: string[], keyword: string): string[] {
 export const useApp = create<State>()(
   persist(
     (set, get) => ({
-      profile: defaultProfile,
+      profile: withDemoProfileDefaults(),
       meds: [],
       doses: [],
       symptoms: [],
@@ -472,6 +494,15 @@ export const useApp = create<State>()(
         }
         return localStorage;
       }),
+      merge: (persisted, current) => {
+        const persistedState =
+          persisted && typeof persisted === "object" ? (persisted as Partial<State>) : {};
+        return {
+          ...current,
+          ...persistedState,
+          profile: withDemoProfileDefaults(persistedState.profile),
+        };
+      },
       skipHydration: true,
     },
   ),

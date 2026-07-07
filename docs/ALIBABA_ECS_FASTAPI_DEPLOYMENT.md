@@ -51,22 +51,34 @@ DASHSCOPE_API_KEY=your_qwen_or_dashscope_key
 QWEN_API_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen3.7-max
 ELEVENLABS_API_KEY=your_elevenlabs_key
-CORS_ORIGINS=*
+CORS_ORIGINS=https://medsbuddy-ai-9lnv.vercel.app,http://localhost:5173
 DATABASE_URL=sqlite:///./medsbuddy.db
 ```
 
-In the MedsBuddy app/frontend `.env`, point the app to this ECS backend:
+For local HTTP development, the browser can call the ECS backend directly:
 
 ```bash
 VITE_MEDSBUDDY_API_BASE_URL=http://YOUR_ALIBABA_ECS_PUBLIC_IP
 ```
 
-After setting it locally, restart the app dev server or rebuild the deployed frontend.
-
-For React Native, `CORS_ORIGINS=*` is acceptable for a hackathon demo. For production web origins, set:
+For Vercel production, do not expose an HTTP ECS IP through a `VITE_*` variable. Vercel is
+served over HTTPS, and browsers block `https://vercel.app -> http://ECS_IP` requests as mixed
+content. Instead, use the server-only Vercel proxy variable:
 
 ```bash
-CORS_ORIGINS=https://yourdomain.com,http://localhost:8080
+MEDSBUDDY_API_BASE_URL=http://YOUR_ALIBABA_ECS_PUBLIC_IP
+VITE_MEDSBUDDY_API_BASE_URL=
+```
+
+The Vercel frontend calls same-origin HTTPS routes such as `/api/medsbuddy/agent-router`, and
+those server routes forward to Alibaba ECS.
+
+After changing environment variables, restart the local app or redeploy the Vercel frontend.
+
+For production web origins, set:
+
+```bash
+CORS_ORIGINS=https://medsbuddy-ai-9lnv.vercel.app,http://localhost:5173
 ```
 
 ## Deploy From Your Mac

@@ -28,6 +28,18 @@ http://YOUR_ECS_PUBLIC_IP/health
 http://YOUR_ECS_PUBLIC_IP/api/qwen-proof
 ```
 
+Vercel production note: do not expose an HTTP ECS IP through `VITE_MEDSBUDDY_API_BASE_URL`.
+The browser app runs on HTTPS, so direct `https://vercel.app -> http://ECS_IP` calls are blocked
+as mixed content. For Vercel, set the server-only proxy variable instead:
+
+```txt
+MEDSBUDDY_API_BASE_URL=http://YOUR_ECS_PUBLIC_IP
+VITE_MEDSBUDDY_API_BASE_URL=
+```
+
+The Vercel app calls same-origin HTTPS routes such as `/api/medsbuddy/agent-router`, and those
+server routes forward to Alibaba ECS.
+
 ## Hackathon Architecture
 
 ```mermaid
@@ -130,7 +142,8 @@ Supported variables:
 | `QWEN_MODEL`                  | No               | Defaults to `qwen-plus`.                                                                                                                                |
 | `QWEN_CHAT_MODEL`             | No               | Fast model for the Talk page. Defaults to `qwen-plus`; keep `QWEN_MODEL` for deeper doctor-visit reasoning.                                             |
 | `QWEN_API_BASE_URL`           | No               | Defaults to `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`. Change this if your Alibaba Cloud account uses another DashScope region endpoint. |
-| `VITE_MEDSBUDDY_API_BASE_URL` | No               | Frontend/mobile backend URL. Set to your Alibaba ECS URL so app API calls use Alibaba Cloud, for example `http://YOUR_ECS_IP`.                          |
+| `MEDSBUDDY_API_BASE_URL`      | Vercel proxy     | Server-only Alibaba ECS backend URL, for example `http://YOUR_ECS_IP`. Use this on Vercel so the browser calls same-origin HTTPS proxy routes.          |
+| `VITE_MEDSBUDDY_API_BASE_URL` | Local/HTTPS only | Browser-visible backend URL. Leave blank for Vercel if ECS is HTTP. Use only for local HTTP dev or an HTTPS backend domain.                             |
 | `ELEVENLABS_API_KEY`          | No               | Enables optional speech-to-text and text-to-speech for Doctor Visit voice.                                                                              |
 | `DATABASE_PROVIDER`           | No               | Use `sqlite` for the FastAPI backend demo database.                                                                                                     |
 | `DATABASE_URL`                | No               | SQLite URL for visit memory, for example `sqlite:///./medsbuddy.db`.                                                                                    |
@@ -192,6 +205,7 @@ docker build -t medsbuddy-ai .
 QWEN_API_KEY=your_qwen_cloud_key
 QWEN_MODEL=qwen-plus
 QWEN_API_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+MEDSBUDDY_API_BASE_URL=http://YOUR_ECS_IP
 PORT=3000
 ```
 

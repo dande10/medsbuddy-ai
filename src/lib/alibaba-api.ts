@@ -6,7 +6,17 @@ export function getMedsBuddyApiBaseUrl(): string {
   const configured =
     (import.meta.env.VITE_MEDSBUDDY_API_BASE_URL as string | undefined)?.trim() ||
     DEFAULT_API_BASE_URL;
-  return configured.replace(/\/$/, "");
+  const normalized = configured.replace(/\/$/, "");
+
+  if (
+    typeof window !== "undefined" &&
+    window.location.protocol === "https:" &&
+    normalized.startsWith("http://")
+  ) {
+    return "";
+  }
+
+  return normalized;
 }
 
 export function medsBuddyApiUrl(path: string): string {
@@ -33,7 +43,7 @@ async function postJson<T>(path: string, body: JsonRecord): Promise<T> {
     const error = await response.text().catch(() => "");
     if (/^\s*<!doctype html/i.test(error) || /<html/i.test(error)) {
       throw new Error(
-        `MedsBuddy backend endpoint was not found at ${url}. Check VITE_MEDSBUDDY_API_BASE_URL and restart the app.`,
+        `MedsBuddy backend endpoint was not found at ${url}. Check MEDSBUDDY_API_BASE_URL for Vercel proxy or VITE_MEDSBUDDY_API_BASE_URL for local/HTTPS backends, then restart the app.`,
       );
     }
     throw new Error(error || `MedsBuddy API failed: ${response.status}`);
