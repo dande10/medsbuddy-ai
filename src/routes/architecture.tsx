@@ -91,16 +91,16 @@ function ArchitecturePage() {
   return (
     <AppShell title="Architecture">
       <section className="space-y-5">
-        <div className="rounded-2xl border bg-card p-5 shadow-card">
-          <div className="flex items-start gap-3">
-            <div className="size-11 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
-              <ShieldCheck className="size-5" />
+        <div className="rounded-2xl border bg-card p-6 shadow-card">
+          <div className="flex items-start gap-4">
+            <div className="size-14 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
+              <ShieldCheck className="size-7" />
             </div>
             <div className="min-w-0">
-              <h2 className="mt-1 text-2xl font-bold tracking-tight">
+              <h2 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">
                 MedsBuddy System Architecture
               </h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              <p className="mt-3 text-base leading-7 text-muted-foreground sm:text-lg">
                 MedsBuddy is an AI Patient Advocate powered by Qwen Cloud and deployed through
                 Alibaba ECS backend APIs. It supports patients before, during, and after a doctor
                 visit.
@@ -109,34 +109,34 @@ function ArchitecturePage() {
           </div>
         </div>
 
-        <section className="rounded-2xl border bg-background p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold tracking-tight">End-to-End Flow</h2>
+        <section className="rounded-2xl border bg-background p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-2xl font-semibold tracking-tight">End-to-End Flow</h2>
             <Link
               to="/doctor"
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
             >
               Demo
-              <ArrowRight className="size-3.5" />
+              <ArrowRight className="size-4" />
             </Link>
           </div>
-          <div className="grid gap-3">
+          <div className="grid gap-4">
             {flow.map((item, index) => {
               const Icon = item.icon;
               return (
-                <div key={item.label} className="flex gap-3">
+                <div key={item.label} className="flex gap-4">
                   <div className="flex flex-col items-center">
-                    <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center">
-                      <Icon className="size-5" />
+                    <div className="size-12 rounded-xl bg-primary/10 text-primary grid place-items-center">
+                      <Icon className="size-6" />
                     </div>
-                    {index < flow.length - 1 && <div className="my-1 h-8 w-px bg-border" />}
+                    {index < flow.length - 1 && <div className="my-1 h-10 w-px bg-border" />}
                   </div>
-                  <div className="min-w-0 pb-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <div className="min-w-0 pb-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       {item.label}
                     </div>
-                    <div className="mt-0.5 font-semibold">{item.title}</div>
-                    <p className="mt-1 text-sm leading-5 text-muted-foreground">{item.detail}</p>
+                    <div className="mt-1 text-lg font-semibold">{item.title}</div>
+                    <p className="mt-1 text-base leading-6 text-muted-foreground">{item.detail}</p>
                   </div>
                 </div>
               );
@@ -145,19 +145,19 @@ function ArchitecturePage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold tracking-tight">Runtime Architecture</h2>
-          <div className="grid gap-2.5">
+          <h2 className="text-2xl font-semibold tracking-tight">Runtime Architecture</h2>
+          <div className="grid gap-3">
             {stack.map((item) => {
               const Icon = item.icon;
               return (
-                <div key={item.name} className="rounded-2xl border bg-card p-4 shadow-card">
-                  <div className="flex gap-3">
-                    <div className="size-10 rounded-xl bg-secondary text-primary grid place-items-center shrink-0">
-                      <Icon className="size-5" />
+                <div key={item.name} className="rounded-2xl border bg-card p-5 shadow-card">
+                  <div className="flex gap-4">
+                    <div className="size-12 rounded-xl bg-secondary text-primary grid place-items-center shrink-0">
+                      <Icon className="size-6" />
                     </div>
                     <div className="min-w-0">
-                      <div className="font-semibold">{item.name}</div>
-                      <p className="mt-1 text-sm leading-5 text-muted-foreground">{item.role}</p>
+                      <div className="text-lg font-semibold">{item.name}</div>
+                      <p className="mt-1 text-base leading-6 text-muted-foreground">{item.role}</p>
                     </div>
                   </div>
                 </div>
@@ -166,12 +166,12 @@ function ArchitecturePage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border bg-card p-4 shadow-card">
-          <div className="mb-3 flex items-center gap-2">
-            <Lock className="size-5 text-primary" />
-            <h2 className="text-lg font-semibold tracking-tight">Trust Boundary</h2>
+        <section className="rounded-2xl border bg-card p-5 shadow-card">
+          <div className="mb-4 flex items-center gap-3">
+            <Lock className="size-6 text-primary" />
+            <h2 className="text-2xl font-semibold tracking-tight">Trust Boundary</h2>
           </div>
-          <div className="grid gap-2 text-sm leading-5 text-muted-foreground">
+          <div className="grid gap-3 text-base leading-6 text-muted-foreground">
             <p>
               Patient context is approved before the live doctor visit. During the appointment,
               MedsBuddy only responds from approved patient information or doctor-stated care-plan

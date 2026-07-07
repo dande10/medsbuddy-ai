@@ -1,0 +1,529 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1600 1000] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+6 0 obj
+<< /Length 6628 >>
+stream
+0.969 0.984 1.000 rg
+0 0 1600 1000 re f
+BT
+0.063 0.125 0.200 rg
+/F2 48 Tf
+1 0 0 1 80 915 Tm
+(MedsBuddy Architecture) Tj
+ET
+BT
+0.310 0.384 0.467 rg
+/F1 24 Tf
+1 0 0 1 80 875 Tm
+(AI Patient Advocate using Qwen Cloud, Alibaba Cloud ECS, visit memory, and voice services) Tj
+ET
+BT
+0.310 0.384 0.467 rg
+/F2 20 Tf
+1 0 0 1 95 805 Tm
+(USERS) Tj
+ET
+BT
+0.310 0.384 0.467 rg
+/F2 20 Tf
+1 0 0 1 505 805 Tm
+(FRONTEND) Tj
+ET
+BT
+0.310 0.384 0.467 rg
+/F2 20 Tf
+1 0 0 1 850 805 Tm
+(ALIBABA CLOUD BACKEND) Tj
+ET
+BT
+0.310 0.384 0.467 rg
+/F2 20 Tf
+1 0 0 1 1265 805 Tm
+(AI + DATA) Tj
+ET
+q
+1.000 1.000 1.000 rg
+0.843 0.886 0.933 RG
+3 w
+80 630 270 135 re B
+Q
+BT
+0.075 0.161 0.239 rg
+/F2 27 Tf
+1 0 0 1 114 709 Tm
+(Patient) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 114 670 Tm
+(Talk page, pre-visit) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 114 640 Tm
+(approval, symptoms) Tj
+ET
+q
+1.000 1.000 1.000 rg
+0.843 0.886 0.933 RG
+3 w
+80 230 270 135 re B
+Q
+BT
+0.075 0.161 0.239 rg
+/F2 27 Tf
+1 0 0 1 114 309 Tm
+(Doctor) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 114 270 Tm
+(Asks questions and) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 114 240 Tm
+(gives care plan) Tj
+ET
+q
+0.933 0.961 1.000 rg
+0.145 0.388 0.922 RG
+3 w
+455 525 320 210 re B
+Q
+BT
+0.075 0.161 0.239 rg
+/F2 27 Tf
+1 0 0 1 489 679 Tm
+(React Frontend) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 489 640 Tm
+(TanStack Start + Vite) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 489 610 Tm
+(Talk page, doctor visit UI,) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 489 580 Tm
+(architecture page, summaries) Tj
+ET
+q
+1.000 0.969 0.929 rg
+0.976 0.451 0.086 RG
+3 w
+455 285 320 150 re B
+Q
+BT
+0.075 0.161 0.239 rg
+/F2 27 Tf
+1 0 0 1 489 379 Tm
+(Voice Layer) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 489 340 Tm
+(ElevenLabs STT/TTS) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 489 310 Tm
+(Browser fallback for demo) Tj
+ET
+q
+0.933 0.961 1.000 rg
+0.145 0.388 0.922 RG
+3 w
+865 510 350 245 re B
+Q
+BT
+0.075 0.161 0.239 rg
+/F2 27 Tf
+1 0 0 1 899 699 Tm
+(Alibaba Cloud ECS) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 899 660 Tm
+(FastAPI backend APIs) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 899 630 Tm
+(Agent router, care-plan gaps,) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 899 600 Tm
+(doctor handoff, summaries) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 899 570 Tm
+(Proof: /api/qwen-proof) Tj
+ET
+q
+0.937 0.965 1.000 rg
+0.055 0.647 0.914 RG
+3 w
+1260 635 280 170 re B
+Q
+BT
+0.075 0.161 0.239 rg
+/F2 27 Tf
+1 0 0 1 1294 749 Tm
+(Qwen Cloud) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 1294 710 Tm
+(Alibaba Cloud) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 1294 680 Tm
+(Model Studio) Tj
+ET
+q
+0.953 1.000 0.973 rg
+0.086 0.639 0.290 RG
+3 w
+1260 405 280 170 re B
+Q
+BT
+0.075 0.161 0.239 rg
+/F2 27 Tf
+1 0 0 1 1294 519 Tm
+(Visit Memory DB) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 1294 480 Tm
+(SQLite on ECS) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 1294 450 Tm
+(Approved summaries, meds,) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 1294 420 Tm
+(allergies, follow-up) Tj
+ET
+q
+1.000 1.000 1.000 rg
+0.843 0.886 0.933 RG
+3 w
+865 205 350 150 re B
+Q
+BT
+0.075 0.161 0.239 rg
+/F2 27 Tf
+1 0 0 1 899 299 Tm
+(Structured Output) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 899 260 Tm
+(Patient-friendly summary,) Tj
+ET
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 899 230 Tm
+(care plan, medication updates) Tj
+ET
+q
+0.145 0.388 0.922 RG
+5 w
+350 700 m 455 650 l S
+Q
+q
+0.145 0.388 0.922 rg
+455 650 m 443.7 664.0 l 437.0 649.9 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F2 17 Tf
+1 0 0 1 370 716 Tm
+(Patient context) Tj
+ET
+q
+0.145 0.388 0.922 RG
+5 w
+350 300 m 455 360 l S
+Q
+q
+0.145 0.388 0.922 rg
+455 360 m 437.0 358.8 l 444.8 345.2 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F2 17 Tf
+1 0 0 1 365 320 Tm
+(Doctor visit audio) Tj
+ET
+q
+0.055 0.647 0.914 RG
+5 w
+615 435 m 615 525 l S
+Q
+q
+0.055 0.647 0.914 rg
+615 525 m 607.2 508.8 l 622.8 508.8 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F2 17 Tf
+1 0 0 1 635 475 Tm
+(Transcript + speech) Tj
+ET
+q
+0.145 0.388 0.922 RG
+5 w
+775 635 m 865 635 l S
+Q
+q
+0.145 0.388 0.922 rg
+865 635 m 848.8 642.8 l 848.8 627.2 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F2 17 Tf
+1 0 0 1 790 655 Tm
+(API requests) Tj
+ET
+q
+0.055 0.647 0.914 RG
+5 w
+1215 640 m 1260 715 l S
+Q
+q
+0.055 0.647 0.914 rg
+1260 715 m 1244.9 705.1 l 1258.4 697.1 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F2 17 Tf
+1 0 0 1 1215 695 Tm
+(Reasoning) Tj
+ET
+q
+0.055 0.647 0.914 RG
+5 w
+1260 680 m 1215 600 l S
+Q
+q
+0.055 0.647 0.914 rg
+1215 600 m 1229.8 610.3 l 1216.1 618.0 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F2 17 Tf
+1 0 0 1 1274 615 Tm
+(JSON result) Tj
+ET
+q
+0.086 0.639 0.290 RG
+5 w
+1215 540 m 1260 500 l S
+Q
+q
+0.086 0.639 0.290 rg
+1260 500 m 1253.1 516.6 l 1242.7 504.9 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F2 17 Tf
+1 0 0 1 1215 505 Tm
+(Save/retrieve) Tj
+ET
+q
+0.086 0.639 0.290 RG
+5 w
+1260 450 m 1215 275 l S
+Q
+q
+0.086 0.639 0.290 rg
+1215 275 m 1226.6 288.7 l 1211.5 292.6 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F2 17 Tf
+1 0 0 1 1272 320 Tm
+(Memory context) Tj
+ET
+q
+0.145 0.388 0.922 RG
+5 w
+1040 510 m 1040 355 l S
+Q
+q
+0.145 0.388 0.922 rg
+1040 355 m 1047.8 371.2 l 1032.2 371.2 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F2 17 Tf
+1 0 0 1 1060 430 Tm
+(Generate visit output) Tj
+ET
+q
+0.145 0.388 0.922 RG
+5 w
+[12 10] 0 d
+865 245 m 775 565 l S
+Q
+q
+0.145 0.388 0.922 rg
+775 565 m 771.9 547.3 l 786.9 551.5 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F2 17 Tf
+1 0 0 1 700 220 Tm
+(Summary back to app) Tj
+ET
+q
+0.055 0.647 0.914 RG
+5 w
+[12 10] 0 d
+455 315 m 350 285 l S
+Q
+q
+0.055 0.647 0.914 rg
+350 285 m 367.7 281.9 l 363.4 297.0 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F2 17 Tf
+1 0 0 1 365 250 Tm
+(Spoken response) Tj
+ET
+q
+1.000 1.000 1.000 rg
+0.843 0.886 0.933 RG
+2 w
+80 50 1460 100 re B
+Q
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 115 112 Tm
+(Flow: Patient approves context) Tj
+ET
+q
+0.318 0.396 0.475 RG
+2 w
+375 113 m 401 113 l S
+Q
+q
+0.318 0.396 0.475 rg
+401 113 m 393 117 l 393 109 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 415 112 Tm
+(Frontend sends transcript to Alibaba Cloud ECS) Tj
+ET
+q
+0.318 0.396 0.475 RG
+2 w
+875 113 m 901 113 l S
+Q
+q
+0.318 0.396 0.475 rg
+901 113 m 893 117 l 893 109 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 915 112 Tm
+(ECS calls Qwen Cloud for AI reasoning) Tj
+ET
+q
+0.318 0.396 0.475 RG
+2 w
+115 79 m 141 79 l S
+Q
+q
+0.318 0.396 0.475 rg
+141 79 m 133 83 l 133 75 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 155 78 Tm
+(Visit memory is stored and retrieved) Tj
+ET
+q
+0.318 0.396 0.475 RG
+2 w
+520 79 m 546 79 l S
+Q
+q
+0.318 0.396 0.475 rg
+546 79 m 538 83 l 538 75 l f
+Q
+BT
+0.318 0.396 0.475 rg
+/F1 20 Tf
+1 0 0 1 560 78 Tm
+(MedsBuddy answers questions, requests clarification when needed, and generates a structured visit summary.) Tj
+ET
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000019 00000 n 
+0000000068 00000 n 
+0000000125 00000 n 
+0000000263 00000 n 
+0000000333 00000 n 
+0000000408 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+7087
+%%EOF

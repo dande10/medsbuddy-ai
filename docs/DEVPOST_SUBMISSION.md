@@ -50,20 +50,135 @@ The current app treats speaker labels as semantic detection from ElevenLabs tran
 
 ## Demo Video Script Under 3 Minutes
 
-1. Open MedsBuddy and show the bottom navigation.
-2. Go to Doctor Visit and show "AI Patient Advocate".
-3. Click Start Live Visit.
-4. Show patient consent and doctor consent.
-5. Let MedsBuddy introduce itself to the doctor and ask consent to participate.
-6. Add patient concern: fever, dizziness after medication, fatigue, leg and lower back pain.
-7. Add doctor question: "Can you tell me the patient's history and medication context?"
-8. Show MedsBuddy answering with patient history and medication context.
-9. Add doctor instruction: "Continue the medication and follow up later."
-10. Show MedsBuddy asking for follow-up timing and warning signs.
-11. End Visit.
-12. Show structured Visit Summary with concerns, doctor assessment, medication guidance, warning signs, follow-up plan, and caregiver summary.
-13. Click Speak Brief Summary so MedsBuddy reads a short patient-friendly recap out loud.
-14. Mention Qwen Cloud powers semantic understanding and advocate responses.
+Use this sore-throat scenario for the recorded demo:
+
+1. Open the Talk page.
+2. Patient says: "Hi MedsBuddy. I've had a sore throat for the last four days. It hurts when I swallow, my voice has become hoarse, and I've had a mild fever since yesterday. I'm worried because it's not getting better."
+3. Show MedsBuddy preparing structured patient context.
+4. Open the Doctor Visit page and approve the pre-visit summary.
+5. Start the live doctor visit.
+6. MedsBuddy says: "Hello Doctor. I am MedsBuddy, the patient's AI advocate..."
+7. Doctor gives consent.
+8. Doctor asks: "Good morning, Vasanthi. Tell me what's been going on."
+9. Show MedsBuddy summarizing the approved patient context.
+10. Doctor asks: "Are you currently taking any medications?"
+11. Show MedsBuddy answering from saved medication context.
+12. Doctor says: "Your throat looks inflamed. I believe this is a bacterial throat infection."
+13. Doctor says: "I'm prescribing Amoxicillin 500 milligrams. Take one capsule twice daily for seven days. Drink plenty of fluids and rest your voice."
+14. Show MedsBuddy asking: "Doctor, could you also confirm when the patient should follow up and what warning signs should prompt urgent medical attention?"
+15. Doctor provides follow-up and warning signs.
+16. Show MedsBuddy acknowledging the updated care plan.
+17. End the visit and show the structured visit summary.
+18. Mention that Qwen Cloud powers patient-context extraction, doctor-intent reasoning, care-plan gap detection, and summary generation.
+
+Keep the video under 3 minutes. Focus on the agent acting during the visit, not on every page in the app.
+
+## Architecture Diagram
+
+Use the in-app `/architecture` page during judging, and include this diagram in the written submission:
+
+```text
+Patient
+  ↓
+Talk Page
+  ↓
+Qwen Patient Context Agent
+  ↓
+Structured Patient Context
+  ↓
+Doctor Visit
+  ↓
+ElevenLabs Speech-to-Text
+  ↓
+Qwen Doctor Agent
+  ↓
+AI Patient Advocate
+  ↓
+Structured Visit Summary
+  ↓
+Alibaba Cloud ECS Visit Memory
+```
+
+## How We Built It
+
+MedsBuddy was built with an AI-first architecture that connects patient preparation, live doctor-visit support, and post-visit memory.
+
+Frontend:
+
+- React
+- TypeScript
+- Vite
+- Framer Motion
+
+Backend:
+
+- Python
+- FastAPI
+- Alibaba Cloud ECS
+- SQLite for demo visit memory
+
+AI:
+
+- Qwen Cloud through Alibaba Cloud Model Studio
+- Patient Context Agent
+- Doctor Agent
+- Care Plan Reasoning
+- Structured Visit Summary Generation
+
+Voice:
+
+- ElevenLabs Speech-to-Text
+- ElevenLabs Text-to-Speech
+
+Deployment:
+
+- Vercel for the frontend
+- Alibaba Cloud ECS for backend APIs, Qwen calls, and visit memory
+
+## Required Submission Assets
+
+Code repository:
+
+```text
+https://github.com/dande10/medsbuddy-ai
+```
+
+The repository is public, includes all source code and deployment instructions, and includes an MIT license at the repository root.
+
+Video demo:
+
+- 1 to 3 minutes maximum.
+- Show the agent in action during the sore-throat doctor visit flow.
+
+Architecture:
+
+- Use `docs/architecture.mmd`.
+- Use the in-app `/architecture` page.
+
+Written summary:
+
+MedsBuddy is an AI patient advocate that helps patients prepare for doctor visits, assists during live appointments, and creates structured visit summaries afterward. Patients can describe symptoms in natural language, and Qwen Cloud extracts structured patient context such as symptoms, medications, concerns, timelines, and questions for the doctor.
+
+During the doctor visit, MedsBuddy listens through speech-to-text, uses Qwen Cloud to understand doctor intent, answers questions using approved patient context, detects missing care-plan details, and asks concise clarification questions when needed. After the visit, it generates a patient-friendly summary and stores approved visit memory through the Alibaba Cloud ECS backend.
+
+Proof of Alibaba Cloud deployment:
+
+- Screenshot the Alibaba Cloud ECS instance page showing the running instance and public IP.
+- Screenshot the backend health endpoint:
+
+```text
+http://YOUR_ECS_PUBLIC_IP/health
+```
+
+- Screenshot the Qwen proof endpoint:
+
+```text
+http://YOUR_ECS_PUBLIC_IP/api/qwen-proof
+```
+
+Open-source note:
+
+MedsBuddy uses open-source frameworks including React, TypeScript, Vite, TanStack Start, FastAPI, and SQLite. The project is an original implementation and should not be submitted as a direct clone of another repository.
 
 ## Judging Map
 

@@ -11,6 +11,23 @@ MedsBuddy AI is a Qwen Cloud-powered AI patient advocate for doctor visits. With
 
 See `docs/DEVPOST_SUBMISSION.md` for the copy-paste Devpost pitch, demo video script, judging map, and submission checklist.
 
+## Judging and Testing Links
+
+- **Public repository:** `https://github.com/dande10/medsbuddy-ai`
+- **License:** MIT, included at `LICENSE`
+- **Architecture diagram:** `docs/architecture.mmd` and the in-app `/architecture` route
+- **Deployment proof guide:** `docs/ALIBABA_ECS_FASTAPI_DEPLOYMENT.md`
+- **Qwen / Alibaba proof guide:** `docs/HACKATHON_QWEN_CLOUD_PROOF.md`
+
+Recommended demo flow: use the Talk page to prepare a sore-throat visit, approve the pre-visit summary, run the Doctor Visit AI Patient Advocate flow, show MedsBuddy answering doctor questions, show MedsBuddy asking for missing follow-up and warning signs after an Amoxicillin care plan, then show the structured visit summary.
+
+Alibaba Cloud proof endpoints to screenshot:
+
+```txt
+http://YOUR_ECS_PUBLIC_IP/health
+http://YOUR_ECS_PUBLIC_IP/api/qwen-proof
+```
+
 ## Hackathon Architecture
 
 ```mermaid
