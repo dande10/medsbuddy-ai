@@ -1195,7 +1195,7 @@ function AIAdvocateDemo({
             <button
               onClick={onStartVisit}
               disabled={!patientSummaryApproved}
-              className="mt-4 w-full rounded-2xl gradient-hero text-primary-foreground py-5 px-4 text-lg font-semibold inline-flex items-center justify-center gap-3 shadow-elegant disabled:opacity-50 lg:mt-auto lg:py-6"
+              className="mt-4 w-full rounded-2xl gradient-hero text-primary-foreground py-5 px-4 text-base font-semibold inline-flex items-center justify-center gap-3 shadow-elegant disabled:opacity-50 lg:mt-auto lg:py-6"
             >
               <Sparkles className="size-6" /> Start Live Visit
             </button>
@@ -1329,7 +1329,7 @@ function AIAdvocateDemo({
           )}
           <button
             onClick={onEndVisit}
-            className="mt-4 w-full rounded-2xl bg-primary text-primary-foreground py-4 lg:py-5 text-lg font-semibold inline-flex items-center justify-center gap-2"
+            className="mt-4 w-full rounded-2xl bg-primary text-primary-foreground py-4 lg:py-5 text-base font-semibold inline-flex items-center justify-center gap-2"
           >
             <ClipboardList className="size-5" /> End Visit
           </button>
@@ -1366,7 +1366,7 @@ function ConversationRow({ speaker, text }: { speaker: string; text: string }) {
       >
         {speaker}
       </div>
-      <div className="text-[14px] leading-relaxed mt-1">{text}</div>
+      <div className="text-[13px] leading-relaxed mt-1">{text}</div>
     </div>
   );
 }
@@ -1465,8 +1465,8 @@ function VisitSummaryCard({
         <Icon className="size-6" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-lg font-bold leading-tight">{title}</div>
-        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{body}</p>
+        <div className="text-base font-bold leading-tight">{title}</div>
+        <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{body}</p>
       </div>
       <div className={`grid size-9 shrink-0 place-items-center rounded-full ${checkClass}`}>
         <Check className="size-5" />
@@ -1479,7 +1479,7 @@ function SummaryBlock({ title, body }: { title: string; body: string }) {
   return (
     <div className="rounded-xl border bg-background p-3 lg:p-5">
       <div className="text-[12px] font-semibold text-primary mb-1">{title}</div>
-      <div className="text-[14px] leading-relaxed">{body}</div>
+      <div className="text-[13px] leading-relaxed">{body}</div>
     </div>
   );
 }
