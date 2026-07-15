@@ -11,6 +11,39 @@ MedsBuddy AI is a Qwen Cloud-powered AI patient advocate for doctor visits. With
 
 See `docs/DEVPOST_SUBMISSION.md` for the copy-paste Devpost pitch, demo video script, judging map, and submission checklist.
 
+## Why Qwen Cloud
+
+MedsBuddy needs more than a generic chat reply. During a doctor visit, the agent has to classify who is speaking, understand clinical intent, retrieve approved patient context, decide when to stay silent, detect missing care-plan details, and produce structured summaries. Qwen Cloud was a good fit because it provides an OpenAI-compatible API, strong reasoning for multi-step agent workflows, and a clean server-side deployment path through Alibaba Cloud.
+
+The project uses Qwen Cloud for:
+
+- Patient context extraction from natural conversation.
+- Doctor intent detection during live visits.
+- Care-plan gap reasoning for medication, follow-up, and warning-sign completeness.
+- Doctor handoff generation from approved patient context.
+- Structured visit summary generation after the appointment.
+
+Voice capture and playback use ElevenLabs for the demo, while Qwen Cloud remains the AI reasoning layer.
+
+## AI Workflow
+
+MedsBuddy follows a consent-first workflow:
+
+1. The patient describes symptoms and concerns on the Talk page.
+2. Qwen Cloud converts that conversation into structured context.
+3. The patient reviews and approves the pre-visit summary.
+4. During the doctor visit, MedsBuddy listens through speech-to-text.
+5. Qwen Cloud classifies doctor intent and decides whether MedsBuddy should respond.
+6. MedsBuddy answers only from approved patient information or stored visit memory.
+7. If a care plan is incomplete, MedsBuddy asks one concise clarification question.
+8. After the visit, Qwen Cloud generates a structured summary, medication guidance, follow-up plan, warning signs, plain-language explanation, and caregiver summary.
+
+This design keeps the AI advocate useful without interrupting normal doctor-patient conversation.
+
+## Offline Support
+
+MedsBuddy stores key patient information locally so patients can still access important health details when network access is unreliable. Emergency SOS, medications, profile details, recent summaries, and QR-ready emergency information remain available offline. In offline mode, AI calls are disabled gracefully, but critical patient information remains visible.
+
 ## Judging and Testing Links
 
 - **Public repository:** `https://github.com/dande10/medsbuddy-ai`
@@ -20,6 +53,8 @@ See `docs/DEVPOST_SUBMISSION.md` for the copy-paste Devpost pitch, demo video sc
 - **Qwen / Alibaba proof guide:** `docs/HACKATHON_QWEN_CLOUD_PROOF.md`
 
 Recommended demo flow: use the Talk page to prepare a sore-throat visit, approve the pre-visit summary, run the Doctor Visit AI Patient Advocate flow, show MedsBuddy answering doctor questions, show MedsBuddy asking for missing follow-up and warning signs after an Amoxicillin care plan, then show the structured visit summary.
+
+For a 3-minute video, focus only on the core arc: Talk page symptom intake, approved pre-visit summary, doctor question answered by MedsBuddy, care-plan clarification, and final structured summary.
 
 Alibaba Cloud proof endpoints to screenshot:
 

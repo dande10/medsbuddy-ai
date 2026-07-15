@@ -674,58 +674,160 @@ async def clarification_check(req: ClarificationCheckRequest) -> dict[str, Any]:
 @app.post("/api/medsbuddy/care-plan-gap")
 async def care_plan_gap(req: CarePlanGapRequest) -> dict[str, Any]:
     logger.info("Alibaba ECS API called: care-plan-gap")
-    reply = await qwen_chat(
-        [
-            {
-                "role": "system",
-                "content": (
-                    "You are MedsBuddy, an AI Patient Advocate. Identify what is still missing "
-                    "from the doctor's care plan. Check only these fields: medication name, dosage, "
-                    "frequency, duration, follow-up, warning signs. Use only what the doctor has "
-                    "actually stated in the transcript. Do not infer warnings, side effects, drug "
-                    "interactions, contraindications, or medication education from general medical "
-                    "knowledge. Do not say no interactions were detected. Do not offer to summarize "
-                    "or send written instructions during the visit. Do not ask about a field that is "
-                    "already complete. If medication name, dosage, frequency, and duration are "
-                    "complete and both follow-up and warning signs are missing, ask exactly: "
-                    "'Doctor, could you confirm when the patient should follow up and what warning signs should prompt urgent medical attention?' "
-                    "If only follow-up is missing, ask when the patient should follow up. If only warning signs are missing, "
-                    "ask what warning signs should prompt urgent medical attention. If the doctor "
-                    "mentions urgent care or medical attention without saying what symptoms should "
-                    "trigger it, ask: 'Doctor, what symptoms should prompt urgent medical care?' "
-                    "Ask only one concise doctor-facing clarification question. If all fields are "
-                    "complete, set allComplete true and leave question empty. "
-                    "Return JSON only with keys missingFields, nextField, question, allComplete, reason."
-                ),
-            },
-            {
-                "role": "user",
-                "content": "\n\n".join(
-                    [
-                        f"Patient ID: {req.patientId}",
-                        f"Care plan text:\n{req.carePlanText}",
-                        f"Current visit transcript:\n{req.transcript or 'Not provided.'}",
-                        f"Patient context:\n{req.patientContext or 'Not provided.'}",
-                        f"Medication history:\n{req.medicationHistory or 'Not provided.'}",
-                        f"Already asked fields: {', '.join(req.alreadyAskedFields) or 'None'}",
-                        "Local field detection:",
-                        f"- medication complete: {req.localMedicationComplete}",
-                        f"- medication name complete: {req.localMedicationNameComplete}",
-                        f"- dosage complete: {req.localDosageComplete}",
-                        f"- frequency complete: {req.localFrequencyComplete}",
-                        f"- duration complete: {req.localDurationComplete}",
-                        f"- follow-up complete: {req.localFollowUpComplete}",
-                        f"- warning signs complete: {req.localWarningSignsComplete}",
-                    ]
-                ),
-            },
-        ],
-        max_tokens=260,
+
+    required_fields = [
+        "medication name",
+        "dosage",
+        "frequency",
+        "duration",
+        "follow-up",
+        "warning signs",
+    ]
+    local_field_status = {
+        "medication name": req.localMedicationNameComplete,
+        "dosage": req.localDosageComplete,
+        "frequency": req.localFrequencyComplete,
+        "duration": req.localDurationComplete,
+        "follow-up": req.localFollowUpComplete,
+        "warning signs": req.localWarningSignsComplete,
+    }
+
+    def normalize_care_plan_field(field: str) -> str:
+        clean = str(field or "").lower().replace("_", " ").replace("-", " ").strip()
+        if "medication" in clean and ("name" in clean or clean == "medication"):
+            return "medication name"
+        if "dosage" in clean or "dose" in clean or "strength" in clean:
+            return "dosage"
+        if "frequency" in clean or "how often" in clean or "timing" in clean:
+            return "frequency"
+        if "duration" in clean or "how long" in clean or "number of days" in clean:
+            return "duration"
+        if "follow" in clean or "return visit" in clean:
+            return "follow-up"
+        if "warning" in clean or "urgent" in clean or "emergency" in clean or "red flag" in clean:
+            return "warning signs"
+        return clean
+
+    already_asked_fields = {
+        normalize_care_plan_field(field)
+        for field in req.alreadyAskedFields
+        if normalize_care_plan_field(field) in required_fields
+    }
+
+    # Stage 1: Qwen dynamically extracts only information explicitly stated by the doctor.
+    extraction_prompt = (
+        "You are MedsBuddy's care-plan extraction agent. Analyze the current doctor-visit transcript "
+        "and care-plan text semantically. For each required field, decide whether the doctor explicitly "
+        "provided it and quote a short supporting evidence phrase. Required fields are: medication name, "
+        "dosage, frequency, duration, follow-up, and warning signs. Do not use general medical knowledge. "
+        "Do not infer missing values. Patient context and medication history may help identify what an entity "
+        "refers to, but they must not be treated as doctor instructions unless the doctor states them in this visit. "
+        "Return valid JSON only with exact keys fieldStatus and evidence. fieldStatus must be an object whose keys "
+        "are the six required field names and whose values are booleans. evidence must use the same keys and contain "
+        "a brief transcript quote or an empty string."
     )
+    extraction_payload = {
+        "patientId": req.patientId,
+        "carePlanText": req.carePlanText,
+        "transcript": req.transcript,
+        "patientContext": req.patientContext,
+        "medicationHistory": req.medicationHistory,
+        "requiredFields": required_fields,
+    }
+    extraction_reply = await qwen_chat(
+        [
+            {"role": "system", "content": extraction_prompt},
+            {"role": "user", "content": json.dumps(extraction_payload)},
+        ],
+        max_tokens=360,
+    )
+    extracted = parse_qwen_json(extraction_reply, "care_plan_extraction")
+    model_status_raw = extracted.get("fieldStatus", {})
+    evidence_raw = extracted.get("evidence", {})
+    model_status = model_status_raw if isinstance(model_status_raw, dict) else {}
+    evidence = evidence_raw if isinstance(evidence_raw, dict) else {}
+
+    # Local detection and Qwen extraction reinforce one another. A field is complete when either
+    # the application already verified it or Qwen found explicit doctor-provided evidence.
+    combined_status: dict[str, bool] = {}
+    normalized_evidence: dict[str, str] = {}
+    for field in required_fields:
+        model_complete = bool(model_status.get(field, False))
+        combined_status[field] = bool(local_field_status[field] or model_complete)
+        normalized_evidence[field] = str(evidence.get(field) or "").strip()
+
+    missing_fields = [
+        field
+        for field in required_fields
+        if not combined_status[field] and field not in already_asked_fields
+    ]
+
+    if not missing_fields:
+        return {
+            "patientId": req.patientId,
+            "qwen": get_qwen_config()["model"],
+            "result": {
+                "missingFields": [],
+                "nextField": "",
+                "question": "",
+                "allComplete": True,
+                "reason": "All required care-plan fields are complete based on local validation and live transcript analysis.",
+                "fieldStatus": combined_status,
+                "evidence": normalized_evidence,
+            },
+        }
+
+    # Stage 2: Qwen dynamically phrases one natural doctor-facing clarification.
+    question_prompt = (
+        "You are MedsBuddy, an AI Patient Advocate in a live doctor visit. Write one concise, respectful, "
+        "natural question addressed to the doctor. Ask only about the supplied missingFields. Combine related "
+        "missing fields when that sounds natural. Do not mention internal field names, JSON, detection, or system state. "
+        "Do not add medical advice, examples, warning signs, side effects, interactions, or assumptions. "
+        "Do not ask about fields already complete or already asked. Return valid JSON only with exact keys question and reason."
+    )
+    question_payload = {
+        "patientId": req.patientId,
+        "latestDoctorVisitTranscript": req.transcript,
+        "carePlanText": req.carePlanText,
+        "missingFields": missing_fields,
+        "alreadyAskedFields": sorted(already_asked_fields),
+        "completedFields": [field for field, complete in combined_status.items() if complete],
+        "evidence": normalized_evidence,
+    }
+    question_reply = await qwen_chat(
+        [
+            {"role": "system", "content": question_prompt},
+            {"role": "user", "content": json.dumps(question_payload)},
+        ],
+        max_tokens=180,
+    )
+    question_result = parse_qwen_json(question_reply, "care_plan_question")
+    question = str(question_result.get("question") or question_result.get("response") or "").strip()
+
+    # Safe fallback only for provider/format failures; normal wording comes from Qwen.
+    if not question:
+        readable_fields = (
+            missing_fields[0]
+            if len(missing_fields) == 1
+            else f"{', '.join(missing_fields[:-1])} and {missing_fields[-1]}"
+        )
+        question = f"Doctor, could you clarify the {readable_fields} for this care plan?"
+
     return {
         "patientId": req.patientId,
         "qwen": get_qwen_config()["model"],
-        "result": parse_qwen_json(reply, "care_plan_gap"),
+        "result": {
+            "missingFields": missing_fields,
+            "nextField": missing_fields[0],
+            "question": question,
+            "allComplete": False,
+            "reason": str(
+                question_result.get("reason")
+                or "Generated dynamically from live transcript gaps."
+            ),
+            "fieldStatus": combined_status,
+            "evidence": normalized_evidence,
+        },
     }
 
 
@@ -743,41 +845,24 @@ async def medsbuddy_agent_router(req: AgentRouterRequest) -> dict[str, Any]:
     chat_model = os.getenv("QWEN_CHAT_MODEL", "qwen-plus").strip() or "qwen-plus"
     if req.mode == "doctor_visit_live":
         system_prompt = (
-            "You are MedsBuddy's AI Agent Router inside a live doctor visit. "
-            "Analyze the latest transcript semantically. Decide speaker, doctor intent, whether MedsBuddy should respond, "
-            "and the exact response to say aloud if needed. Use only the patient's approved context and visit transcript. "
-            "Do not default unlabeled speech to patient. Classify speaker from clinical role and wording. "
-            "Doctor speech includes greeting the patient, asking visit questions, asking about medications, "
-            "exam findings, assessments, prescriptions, follow-up guidance, and warning-sign guidance. "
-            "Patient speech includes first-person symptom reports or answers about the patient's own condition. "
-            "During the live doctor visit, MedsBuddy may only do three things: answer doctor questions about "
-            "the approved patient context, ask one missing care-plan clarification, or acknowledge that the "
-            "care plan is complete. "
-            "Keep patient privacy and doctor consent in mind. Do not invent medical facts. Do not provide general "
-            "medical advice, medication side effects, drug interaction assessments, or warning signs unless the doctor "
-            "already stated them or the approved patient context contains them. Never say no known drug interactions "
-            "were detected. Do not offer to send, write, or summarize information during the visit unless the doctor "
-            "explicitly requests a summary. Never say 'Would you like me to clarify' or 'Would you like me to summarize'. "
-            "If the doctor asks for patient context, identify requestedFields and missingFields using only these exact field names: "
-            "reason for visit, symptoms, medications, allergies, medical history, duration, concerns, questions for doctor. "
-            "missingFields must include only requested fields absent from the approved patient context. "
-            "If information is missing, write one brief patientClarificationQuestion for the patient. "
-            "Set includePreviousVisitHistory true only when previous visit or medical history is requested. "
-            "If the doctor asks what has been going on, what brings the patient in, or asks for the main concern, "
-            "classify intent as visit_summary_request, set shouldRespond true, and summarize the approved pre-visit "
-            "context in one concise paragraph. "
-            "If the latest transcript contains doctor care-plan instructions, classify intent as care_plan_instruction, "
-            "set shouldRespond true, and leave response as an empty string so the care-plan gap checker can decide "
-            "whether one clarification question is needed. "
-            "If the doctor is asking the patient a normal visit question, set speaker doctor, intent normal_conversation, "
-            "and shouldRespond false. "
-            "If the doctor asks whether the patient has any questions before ending the visit and the care plan is complete, "
-            "set shouldRespond true and response exactly: 'No further questions, Doctor. Thank you. Today’s visit summary is ready.' "
-            "If the care plan is not complete, ask only the missing care-plan clarification. Do not repeat the approved "
-            "pre-visit summary. "
+            "You are MedsBuddy's live doctor-visit decision agent. Analyze the latest transcript semantically, "
+            "using recent conversation and current state for context. Determine the likely speaker, clinical intent, "
+            "and whether MedsBuddy should speak. Do not rely on exact phrases or keyword matching. "
+            "Use only patient-approved context and information explicitly stated during this visit. "
+            "MedsBuddy may speak only when: the doctor requests approved patient information; the application supplies "
+            "a missing care-plan clarification to ask; or the current state confirms the care plan is complete and an "
+            "acknowledgment is appropriate. Stay silent during ordinary doctor-patient conversation. "
+            "When the doctor requests the reason for visit or a summary of the patient's current concern, create one concise "
+            "spoken response from approved pre-visit context. When the doctor states assessment, prescription, follow-up, "
+            "or warning-sign instructions, classify it as care_plan_instruction and leave response empty so the dedicated "
+            "care-plan analyzer can extract fields and generate any necessary clarification. "
+            "Classify the speaker from clinical role, grammar, and conversational context; never default unlabeled speech "
+            "to the patient. Ignore unrelated background speech and obvious transcription artifacts. "
+            "Never invent medical facts, provide independent medical advice, infer side effects or interactions, or expose "
+            "unapproved information. Do not participate unless currentState indicates active patient consent. "
             "Allowed intents: direct_call, patient_history_request, medication_history_request, visit_summary_request, "
             "warning_signs_request, doctor_answers_request, care_plan_instruction, normal_conversation, none. "
-            "Return JSON only with exact keys: speaker, intent, confidence, shouldRespond, response, requestedFields, "
+            "Return valid JSON only with exact keys: speaker, intent, confidence, shouldRespond, response, requestedFields, "
             "missingFields, patientClarificationQuestion, includePreviousVisitHistory, memoryUsed."
         )
         user_payload = {

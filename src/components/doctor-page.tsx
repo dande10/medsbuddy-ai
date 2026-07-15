@@ -8,12 +8,15 @@ import {
 } from "@/lib/alibaba-api";
 import {
   Activity,
+  AlertTriangle,
   Calendar,
   Check,
   ClipboardList,
   FileText,
   Mic,
+  Pause,
   Pill,
+  Play,
   Sparkles,
   Stethoscope,
   Volume2,
@@ -25,6 +28,7 @@ import {
   TRANSCRIPT_MERGE_DELAY_MS,
   buildCarePlanResponseWithQwen,
   buildDoctorConsentMessage,
+  buildIntentResponse,
   buildMedicationHistory,
   buildPatientSummary,
   buildReadablePreVisitFallback,
@@ -267,7 +271,7 @@ export function DoctorPage() {
     handledCarePlanKeysRef.current.clear();
     savedMedicationInstructionKeysRef.current.clear();
     setDoctorVisitConsent("pending");
-    setVisitMessages([buildDoctorConsentMessage(approvedContext, profile.name || "Vasanthi")]);
+    setVisitMessages([buildDoctorConsentMessage(approvedContext, profile.name || "the patient")]);
     setVisitSummary(buildSummaryFromTranscript([], approvedContext));
     setWakeStatus("Waiting for doctor consent");
     setSimulatedTranscript("");
@@ -560,6 +564,18 @@ export function DoctorPage() {
                 handledCarePlanKeys: handledCarePlanKeysRef.current,
               })
             : null;
+        const fallbackContextResponse =
+          decision.shouldRespond && stageAllowsResponse && !decision.response && !carePlanResponse
+            ? buildIntentResponse(
+                decision.intent,
+                latestText,
+                visitMessagesRef.current,
+                state,
+                handledCarePlanKeysRef.current,
+                patientContextForVisit,
+                decision,
+              )
+            : null;
 
         if (decision.intent === "care_plan_instruction") {
           const prescribedMedication = extractPrescribedMedicationFromCarePlan(
@@ -590,7 +606,9 @@ export function DoctorPage() {
         }
 
         const intentResponse =
-          decision.shouldRespond && stageAllowsResponse && (decision.response || carePlanResponse);
+          decision.shouldRespond &&
+          stageAllowsResponse &&
+          (decision.response || carePlanResponse || fallbackContextResponse);
 
         if (intentResponse) {
           addMedsBuddyVisitMessage(
@@ -876,7 +894,7 @@ export function DoctorPage() {
 
         startSegment();
         setVoiceListening(true);
-        setWakeStatus("ElevenLabs STT is listening");
+        setWakeStatus("Meds Buddy is listening");
       })
       .catch(() => {
         if (cancelled) return;
@@ -1002,7 +1020,7 @@ export function DoctorPage() {
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="rounded-[28px] gradient-hero text-primary-foreground p-6 shadow-elegant mb-5 relative overflow-hidden"
+        className="rounded-[28px] gradient-hero text-primary-foreground p-6 lg:p-9 shadow-elegant mb-5 lg:mb-7 relative overflow-hidden"
       >
         <div className="absolute -top-16 -right-16 size-48 rounded-full bg-white/10 blur-3xl" />
         <div className="flex items-center gap-3">
@@ -1022,7 +1040,7 @@ export function DoctorPage() {
         )}
       </motion.div>
 
-      <>
+      <div className={stage === "summary" ? "lg:grid lg:grid-cols-[0.9fr_1.1fr] lg:gap-8" : ""}>
         <AIAdvocateDemo
           stage={stage}
           patientSummary={patientContextForVisit}
@@ -1060,7 +1078,7 @@ export function DoctorPage() {
             summarySpeaking={summarySpeaking}
           />
         )}
-      </>
+      </div>
     </>
   );
 }
@@ -1120,54 +1138,74 @@ function AIAdvocateDemo({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl bg-card border shadow-card p-4 mb-3"
+      className="rounded-2xl bg-card border shadow-card p-4 mb-3 lg:p-6 lg:mb-5"
     >
       {stage === "idle" && (
-        <>
-          <div className="rounded-xl border bg-background p-3 mb-3">
-            <div className="text-[12px] font-semibold text-primary mb-1">
-              Review Before Your Appointment
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_480px] lg:gap-5 lg:items-stretch">
+          <div className="rounded-xl border bg-background p-3 mb-3 lg:mb-0 lg:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[12px] font-semibold text-primary">
+                Review Before Your Appointment
+              </div>
+              {patientSummaryApproved && (
+                <span className="hidden rounded-full bg-success/15 px-3 py-1 text-xs font-semibold text-success lg:inline-flex">
+                  Approved
+                </span>
+              )}
             </div>
             <textarea
               value={patientContextDraft}
               onChange={(event) => onPatientContextDraftChange(event.target.value)}
-              className="min-h-[260px] w-full resize-none rounded-xl border bg-card px-3 py-3 text-[13px] leading-relaxed text-foreground"
+              className="mt-2 min-h-[460px] w-full resize-none rounded-xl border bg-card px-3 py-3 text-[13px] leading-relaxed text-foreground lg:min-h-[500px] lg:px-4 lg:py-4"
               aria-label="Pre-visit summary for doctor visit"
             />
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          </div>
+
+          <div className="flex flex-col rounded-xl border bg-background p-3 lg:p-5">
+            <div className="rounded-xl bg-primary/10 p-4 text-primary">
+              <div className="text-[12px] font-semibold">Doctor-ready context</div>
+              <p className="mt-2 text-[13px] leading-relaxed text-foreground/80">
+                Approve this summary before MedsBuddy uses it to answer doctor questions during the
+                live visit.
+              </p>
+            </div>
+
+            <div className="mt-3 grid gap-2">
               <button
                 onClick={onApprovePatientContext}
                 disabled={!patientContextDraft.trim()}
                 className="rounded-xl bg-primary text-primary-foreground px-4 py-3 text-sm font-semibold disabled:opacity-50"
               >
-                {patientSummaryApproved ? "Approved" : "Approve Summary"}
+                {patientSummaryApproved ? "Summary Approved" : "Approve Summary"}
               </button>
               <button
                 onClick={onEditPatientContext}
                 className="rounded-xl bg-secondary text-secondary-foreground px-4 py-3 text-sm font-semibold"
               >
-                Edit
+                Edit Summary
               </button>
             </div>
-            <p className="mt-2 text-[11px] text-muted-foreground">
+
+            <p className="mt-3 text-[11px] text-muted-foreground">
               {preVisitSummaryPreparing
                 ? "MedsBuddy is refining this summary in the background. You can approve and start now."
-                : "Patient reviews and approves this summary before MedsBuddy uses it in the visit."}
+                : "This keeps the live visit focused on patient-approved information."}
             </p>
+
+            <button
+              onClick={onStartVisit}
+              disabled={!patientSummaryApproved}
+              className="mt-4 w-full rounded-2xl gradient-hero text-primary-foreground py-5 px-4 text-lg font-semibold inline-flex items-center justify-center gap-3 shadow-elegant disabled:opacity-50 lg:mt-auto lg:py-6"
+            >
+              <Sparkles className="size-6" /> Start Live Visit
+            </button>
           </div>
-          <button
-            onClick={onStartVisit}
-            disabled={!patientSummaryApproved}
-            className="w-full rounded-2xl gradient-hero text-primary-foreground py-5 px-4 text-lg font-semibold inline-flex items-center justify-center gap-3 shadow-elegant disabled:opacity-50"
-          >
-            <Sparkles className="size-6" /> Start Live Visit
-          </button>
-        </>
+        </div>
       )}
 
       {active && (
         <>
-          <div className="rounded-2xl bg-primary/10 border border-primary/25 p-4 mb-3 flex items-center gap-3">
+          <div className="rounded-2xl bg-primary/10 border border-primary/25 p-4 lg:p-5 mb-3 lg:mb-5 flex items-center gap-3 lg:gap-4">
             <span className="relative grid place-items-center size-10 rounded-full bg-primary/20">
               {visitCanListen && (
                 <span className="absolute inset-0 rounded-full bg-primary/30 animate-ping" />
@@ -1194,30 +1232,35 @@ function AIAdvocateDemo({
             </div>
           </div>
           {visitCanListen && (
-            <div className="mb-3 grid gap-2 sm:grid-cols-2">
+            <div className="mb-3">
               <button
-                onClick={() => onMedsBuddyTalkingChange(true)}
-                className={`rounded-xl px-4 py-3 text-sm font-semibold ${
+                onClick={() => onMedsBuddyTalkingChange(!medsBuddyTalking)}
+                className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-colors ${
                   medsBuddyTalking
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-secondary-foreground"
+                    ? "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                    : "bg-primary text-primary-foreground hover:bg-primary/90"
                 }`}
               >
-                MedsBuddy Talking: ON
+                {medsBuddyTalking ? (
+                  <>
+                    <Pause className="size-4" />
+                    Pause MedsBuddy
+                  </>
+                ) : (
+                  <>
+                    <Play className="size-4" />
+                    Resume MedsBuddy
+                  </>
+                )}
               </button>
-              <button
-                onClick={() => onMedsBuddyTalkingChange(false)}
-                className={`rounded-xl px-4 py-3 text-sm font-semibold ${
-                  !medsBuddyTalking
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-secondary-foreground"
-                }`}
-              >
-                MedsBuddy Talking: OFF
-              </button>
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                {medsBuddyTalking
+                  ? "MedsBuddy can speak when the doctor asks or a care-plan detail needs clarification."
+                  : "Paused: MedsBuddy is still capturing the visit, but will not speak."}
+              </p>
             </div>
           )}
-          <div className="rounded-xl border bg-background p-3 mb-3">
+          <div className="rounded-xl border bg-background p-3 lg:p-5 mb-3 lg:mb-5">
             <div className="text-[12px] font-semibold text-primary mb-1">Pre-Visit Summary</div>
             <p className="whitespace-pre-line text-[13px] text-muted-foreground leading-relaxed">
               {patientSummary}
@@ -1225,7 +1268,7 @@ function AIAdvocateDemo({
           </div>
           <div className="space-y-2">
             {messages.length === 0 ? (
-              <div className="rounded-xl border border-dashed bg-background p-4 text-sm text-muted-foreground">
+              <div className="rounded-xl border border-dashed bg-background p-4 lg:p-6 text-sm text-muted-foreground">
                 Start speaking. MedsBuddy will label the speaker automatically.
               </div>
             ) : (
@@ -1255,7 +1298,7 @@ function AIAdvocateDemo({
             </div>
           )}
           {visitCanListen && (
-            <div className="mt-4 rounded-2xl border bg-background p-3">
+            <div className="mt-4 rounded-2xl border bg-background p-3 lg:p-5">
               <label htmlFor="wake-transcript" className="text-[12px] font-semibold text-primary">
                 Simulate live transcript
               </label>
@@ -1286,7 +1329,7 @@ function AIAdvocateDemo({
           )}
           <button
             onClick={onEndVisit}
-            className="mt-4 w-full rounded-2xl bg-primary text-primary-foreground py-4 text-lg font-semibold inline-flex items-center justify-center gap-2"
+            className="mt-4 w-full rounded-2xl bg-primary text-primary-foreground py-4 lg:py-5 text-lg font-semibold inline-flex items-center justify-center gap-2"
           >
             <ClipboardList className="size-5" /> End Visit
           </button>
@@ -1314,7 +1357,7 @@ function ConversationRow({ speaker, text }: { speaker: string; text: string }) {
   const isAdvocate = speaker === "MedsBuddy";
   return (
     <div
-      className={`rounded-xl border p-3 ${
+      className={`rounded-xl border p-3 lg:p-4 ${
         isAdvocate ? "bg-primary/5 border-primary/20" : "bg-background"
       }`}
     >
@@ -1337,6 +1380,33 @@ function VisitSummary({
   onSpeakSummary: () => void;
   summarySpeaking: boolean;
 }) {
+  const summaryCards = [
+    {
+      title: "Diagnosis",
+      body: summary.diagnosis,
+      icon: Stethoscope,
+      tone: "primary" as const,
+    },
+    {
+      title: "Medications",
+      body: summary.medicationGuidance || summary.medicationChanges,
+      icon: Pill,
+      tone: "success" as const,
+    },
+    {
+      title: "Follow-up",
+      body: summary.followUpPlan || summary.followUpInstructions,
+      icon: ClipboardList,
+      tone: "primary" as const,
+    },
+    {
+      title: "Warning Signs",
+      body: summary.warningSigns,
+      icon: AlertTriangle,
+      tone: "warning" as const,
+    },
+  ];
+
   return (
     <Section icon={ClipboardList} title="Visit Summary" tint="success">
       <div className="space-y-3">
@@ -1347,13 +1417,20 @@ function VisitSummary({
           <Volume2 className="size-4" />
           {summarySpeaking ? "Speaking visit summary..." : "Speak Brief Summary"}
         </button>
+        <div className="grid gap-3">
+          {summaryCards.map((card) => (
+            <VisitSummaryCard
+              key={card.title}
+              title={card.title}
+              body={card.body}
+              icon={card.icon}
+              tone={card.tone}
+            />
+          ))}
+        </div>
         <SummaryBlock title="Reason for Visit" body={summary.visitSummary} />
         <SummaryBlock title="Patient Symptoms" body={summary.patientConcerns} />
         <SummaryBlock title="Doctor Assessment" body={summary.doctorAssessment} />
-        <SummaryBlock title="Diagnosis" body={summary.diagnosis} />
-        <SummaryBlock title="Medication Instructions" body={summary.medicationGuidance} />
-        <SummaryBlock title="Follow-up Plan" body={summary.followUpPlan} />
-        <SummaryBlock title="Warning Signs" body={summary.warningSigns} />
         <SummaryBlock title="Questions Asked by MedsBuddy" body={summary.medsBuddyQuestions} />
         <SummaryBlock title="Doctor Responses (Summarized)" body={summary.doctorAnswers} />
         <SummaryBlock title="Plain-language Explanation" body={summary.simpleExplanation} />
@@ -1364,9 +1441,43 @@ function VisitSummary({
   );
 }
 
+function VisitSummaryCard({
+  title,
+  body,
+  icon: Icon,
+  tone,
+}: {
+  title: string;
+  body: string;
+  icon: typeof Pill;
+  tone: "primary" | "success" | "warning";
+}) {
+  const toneClass = {
+    primary: "bg-primary text-primary-foreground",
+    success: "bg-success text-white",
+    warning: "bg-warning text-white",
+  }[tone];
+  const checkClass = "bg-success text-white";
+
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border bg-background p-4 shadow-card lg:p-5">
+      <div className={`grid size-12 shrink-0 place-items-center rounded-xl ${toneClass}`}>
+        <Icon className="size-6" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-lg font-bold leading-tight">{title}</div>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{body}</p>
+      </div>
+      <div className={`grid size-9 shrink-0 place-items-center rounded-full ${checkClass}`}>
+        <Check className="size-5" />
+      </div>
+    </div>
+  );
+}
+
 function SummaryBlock({ title, body }: { title: string; body: string }) {
   return (
-    <div className="rounded-xl border bg-background p-3">
+    <div className="rounded-xl border bg-background p-3 lg:p-5">
       <div className="text-[12px] font-semibold text-primary mb-1">{title}</div>
       <div className="text-[14px] leading-relaxed">{body}</div>
     </div>
@@ -1415,7 +1526,7 @@ function Section({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl bg-card border shadow-card p-4 mb-3"
+      className="rounded-2xl bg-card border shadow-card p-4 mb-3 lg:p-6 lg:mb-5"
     >
       <div className="flex items-center gap-2 mb-3">
         <div className={`size-8 rounded-lg grid place-items-center ${tintClass}`}>

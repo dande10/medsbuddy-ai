@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import offlineModeImage from "@/assets/offlineMode.png";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -62,218 +63,246 @@ function Home() {
 
   return (
     <AppShell>
-      {/* HERO */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="relative overflow-hidden rounded-[28px] gradient-hero text-primary-foreground p-6 shadow-elegant mb-5"
-      >
-        <div className="absolute -top-20 -right-20 size-64 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -bottom-16 -left-12 size-48 rounded-full bg-white/10 blur-3xl" />
-
-        <div className="relative flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="text-[13px] opacity-80 font-medium">
-              {greeting}
-              {firstName ? `, ${firstName}` : ""}
-            </div>
-            <h2 className="text-[26px] font-bold leading-tight mt-1 tracking-tight">
-              Your AI Patient
-              <br />
-              Advocate is here.
-            </h2>
-            <p className="text-sm opacity-85 mt-2 max-w-[20rem]">
-              Ask anything about your health, meds, or visits — out loud or by typing.
-            </p>
-          </div>
-          <AiOrb size={88} />
-        </div>
-
-        <button
-          onClick={() => navigate({ to: "/talk" })}
-          className="relative mt-5 w-full rounded-2xl bg-white/15 hover:bg-white/20 backdrop-blur border border-white/25 px-5 py-3.5 flex items-center gap-3 transition-colors"
-        >
-          <div className="size-10 rounded-full bg-white/95 grid place-items-center">
-            <Mic className="size-5 text-primary" />
-          </div>
-          <div className="text-left flex-1">
-            <div className="font-semibold text-[15px]">Tap to talk</div>
-            <div className="text-[12px] opacity-80">"Did I take my meds today?"</div>
-          </div>
-          <ChevronRight className="size-5 opacity-80" />
-        </button>
-      </motion.div>
-
-      {/* QUICK ACTIONS */}
-      <div className="grid grid-cols-4 gap-2.5 mb-6">
-        <QuickAction to="/talk" icon={Mic} label="Ask" />
-        <QuickAction to="/doctor" icon={FileText} label="Speak" sub="For me" />
-        <QuickAction to="/emergency" icon={QrCode} label="SOS" danger />
-        <QuickAction to="/architecture" icon={Network} label="Arch" sub="Judges" />
-      </div>
-
-      {/* OFFLINE READY CARD */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="rounded-3xl border border-primary/25 bg-primary/[0.04] p-4 mb-5"
-      >
-        <div className="flex items-center gap-3 mb-3">
-          <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
-            <CloudOff className="size-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-semibold text-[15px] tracking-tight">Offline Ready</div>
-            <div className="text-[12px] text-muted-foreground">
-              Works without internet — even in emergencies.
-            </div>
-          </div>
-          <span className="rounded-full bg-success/15 text-success text-[11px] font-semibold px-2.5 py-1">
-            Available
-          </span>
-        </div>
-        <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px]">
-          {["Doctor Summary", "Emergency QR", "Medications", "Symptoms", "Visit Summaries"].map(
-            (f) => (
-              <li key={f} className="inline-flex items-center gap-1.5 text-foreground/80">
-                <Check className="size-3.5 text-primary shrink-0" />
-                {f}
-              </li>
-            ),
-          )}
-        </ul>
-      </motion.div>
-
-      {/* SNAPSHOT */}
-      <div className="flex items-baseline justify-between mb-3">
-        <h2>Today's snapshot</h2>
-        <span className="text-xs text-muted-foreground">
-          {new Date().toLocaleDateString(undefined, {
-            weekday: "long",
-            month: "short",
-            day: "numeric",
-          })}
-        </span>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 mb-5">
-        <SnapshotCard
-          to="/reminders"
-          icon={Pill}
-          tint="primary"
-          label="Medications"
-          value={
-            meds.length === 0
-              ? "Set up"
-              : `${dosesToday.filter((d) => d.status === "taken").length}/${dosesToday.length || meds.length}`
-          }
-          sub={meds.length === 0 ? "Add your first med" : "Doses today"}
-        />
-        <SnapshotCard
-          to="/symptoms"
-          icon={Activity}
-          tint="warning"
-          label="Symptoms"
-          value={String(sympToday.length)}
-          sub={sympToday.length === 0 ? "Nothing logged" : "Logged in 24h"}
-        />
-        <SnapshotCard
-          to="/doctor"
-          icon={Stethoscope}
-          tint="success"
-          label="Doctor visit"
-          value={
-            upcoming
-              ? new Date(upcoming.at).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                })
-              : "Ready"
-          }
-          sub={upcoming ? `with ${upcoming.doctor}` : "Generate summary"}
-        />
-        <SnapshotCard
-          to="/emergency"
-          icon={profileReady ? ShieldCheck : AlertTriangle}
-          tint={profileReady ? "success" : "danger"}
-          label="Emergency"
-          value={profileReady ? "Ready" : "Incomplete"}
-          sub={profileReady ? "QR ready to share" : "Add your profile"}
-        />
-      </div>
-
-      {/* Adherence ribbon */}
-      <Link
-        to="/reminders"
-        className="block rounded-2xl border bg-card shadow-card p-4 mb-4 hover:bg-secondary/40 transition-colors"
-      >
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-sm font-medium">7-day adherence</div>
-          <div className="text-xs text-muted-foreground">
-            {doses.filter((d) => d.at > Date.now() - 7 * 86400000).length} doses
-          </div>
-        </div>
-        <div className="h-2.5 rounded-full bg-secondary overflow-hidden">
+      <div className="lg:grid lg:grid-cols-[1.08fr_0.92fr] lg:gap-8 lg:items-start">
+        <div className="lg:sticky lg:top-24">
+          {/* HERO */}
           <motion.div
-            initial={{ width: 0 }}
-            animate={{ width: `${adh}%` }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            className="h-full rounded-full"
-            style={{
-              background:
-                adh >= 80
-                  ? "linear-gradient(90deg, var(--success), var(--primary-glow))"
-                  : adh >= 50
-                    ? "linear-gradient(90deg, var(--warning), var(--primary-glow))"
-                    : "linear-gradient(90deg, var(--destructive), var(--warning))",
-            }}
-          />
-        </div>
-        <div className="flex items-center justify-between mt-2">
-          <div className="text-2xl font-bold tracking-tight">{adh}%</div>
-          <div className="text-xs text-muted-foreground inline-flex items-center gap-1">
-            <CheckCircle2 className="size-3.5 text-success" /> on track
-          </div>
-        </div>
-      </Link>
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="relative overflow-hidden rounded-2xl gradient-hero text-primary-foreground p-6 lg:p-9 shadow-elegant mb-5 lg:mb-7"
+          >
+            <div className="absolute -top-20 -right-20 size-64 rounded-full bg-white/10 blur-3xl" />
+            <div className="absolute -bottom-16 -left-12 size-48 rounded-full bg-white/10 blur-3xl" />
 
-      {/* Onboarding nudge */}
-      {!profileReady && (
-        <Link
-          to="/profile"
-          className="flex items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 p-4 mb-4"
-        >
-          <div className="size-10 rounded-xl bg-primary/15 grid place-items-center text-primary">
-            <ShieldCheck className="size-5" />
-          </div>
-          <div className="flex-1">
-            <div className="font-semibold text-[15px]">Complete your health profile</div>
-            <div className="text-xs text-muted-foreground">
-              Used for AI replies, doctor summary, and emergency QR.
+            <div className="relative flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] opacity-80 font-medium">
+                  {greeting}
+                  {firstName ? `, ${firstName}` : ""}
+                </div>
+                <h2 className="text-[26px] lg:text-[38px] font-bold leading-tight mt-1">
+                  Your AI Patient
+                  <br />
+                  Advocate is here.
+                </h2>
+                <p className="text-sm lg:text-base opacity-85 mt-2 max-w-[24rem]">
+                  Prepare for your doctor visit with approved symptoms, medications, and questions.
+                </p>
+              </div>
+              <div className="hidden lg:block">
+                <AiOrb size={128} />
+              </div>
+              <div className="lg:hidden">
+                <AiOrb size={88} />
+              </div>
             </div>
-          </div>
-          <ChevronRight className="size-5 text-primary" />
-        </Link>
-      )}
 
-      {/* SOS quick access */}
-      <Link
-        to="/emergency"
-        className="flex items-center gap-3 rounded-2xl border border-destructive/20 bg-destructive/[0.04] p-4"
-      >
-        <div className="size-10 rounded-xl bg-destructive/10 grid place-items-center text-destructive sos-pulse">
-          <Siren className="size-5" />
-        </div>
-        <div className="flex-1">
-          <div className="font-semibold text-[15px]">Emergency QR</div>
-          <div className="text-xs text-muted-foreground">
-            For paramedics & first responders — works offline
+            <button
+              onClick={() => navigate({ to: "/talk" })}
+              className="relative mt-5 lg:mt-7 w-full rounded-xl bg-white/15 hover:bg-white/20 backdrop-blur border border-white/25 px-5 lg:px-6 py-3.5 lg:py-5 flex items-center gap-3 lg:gap-4 transition-colors"
+            >
+              <div className="size-10 lg:size-12 rounded-xl bg-white/95 grid place-items-center">
+                <Mic className="size-5 lg:size-6 text-primary" />
+              </div>
+              <div className="text-left flex-1">
+                <div className="font-semibold text-[15px]">Prepare doctor visit</div>
+                <div className="text-[12px] opacity-80">"I have a sore throat for four days"</div>
+              </div>
+              <ChevronRight className="size-5 opacity-80" />
+            </button>
+          </motion.div>
+
+          {/* QUICK ACTIONS */}
+          <div className="grid grid-cols-4 gap-2.5 lg:gap-4 mb-6 lg:mb-8">
+            <QuickAction to="/talk" icon={FileText} label="Prepare" sub="Visit" />
+            <QuickAction to="/doctor" icon={Stethoscope} label="Live" sub="Visit" />
+            <QuickAction to="/emergency" icon={QrCode} label="SOS" danger />
+            <QuickAction to="/architecture" icon={Network} label="Arch" sub="Judges" />
           </div>
+
+          {/* OFFLINE READY CARD */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/[0.04] p-4 lg:flex lg:min-h-[280px] lg:items-center lg:justify-between lg:gap-8 lg:p-8 mb-5"
+          >
+            <div className="relative z-10 lg:flex-1">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
+                  <CloudOff className="size-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-[15px]">Offline Ready</div>
+                  <div className="text-[12px] text-muted-foreground">
+                    Works without internet — even in emergencies.
+                  </div>
+                </div>
+                <span className="rounded-full bg-success/15 text-success text-[11px] font-semibold px-2.5 py-1 lg:hidden">
+                  Available
+                </span>
+              </div>
+              <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px]">
+                {[
+                  "Doctor Summary",
+                  "Emergency QR",
+                  "Medications",
+                  "Symptoms",
+                  "Visit Summaries",
+                ].map((f) => (
+                  <li key={f} className="inline-flex items-center gap-1.5 text-foreground/80">
+                    <Check className="size-3.5 text-primary shrink-0" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="relative z-10 hidden min-w-[190px] flex-col items-end gap-5 lg:flex">
+              <span className="rounded-full bg-success/15 text-success text-[11px] font-semibold px-2.5 py-1">
+                Available
+              </span>
+              <img
+                src={offlineModeImage}
+                alt=""
+                aria-hidden="true"
+                className="pointer-events-none h-44 w-auto object-contain xl:h-48"
+              />
+            </div>
+          </motion.div>
         </div>
-        <ChevronRight className="size-5 text-destructive" />
-      </Link>
+
+        <div className="min-w-0">
+          {/* SNAPSHOT */}
+          <div className="flex items-baseline justify-between mb-3">
+            <h2>Today's snapshot</h2>
+            <span className="text-xs text-muted-foreground">
+              {new Date().toLocaleDateString(undefined, {
+                weekday: "long",
+                month: "short",
+                day: "numeric",
+              })}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 lg:gap-5 mb-5 lg:mb-7">
+            <SnapshotCard
+              to="/reminders"
+              icon={Pill}
+              tint="primary"
+              label="Medications"
+              value={
+                meds.length === 0
+                  ? "Set up"
+                  : `${dosesToday.filter((d) => d.status === "taken").length}/${dosesToday.length || meds.length}`
+              }
+              sub={meds.length === 0 ? "Add your first med" : "Doses today"}
+            />
+            <SnapshotCard
+              to="/symptoms"
+              icon={Activity}
+              tint="warning"
+              label="Symptoms"
+              value={String(sympToday.length)}
+              sub={sympToday.length === 0 ? "Nothing logged" : "Logged in 24h"}
+            />
+            <SnapshotCard
+              to="/doctor"
+              icon={Stethoscope}
+              tint="success"
+              label="Doctor visit"
+              value={
+                upcoming
+                  ? new Date(upcoming.at).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })
+                  : "Ready"
+              }
+              sub={upcoming ? `with ${upcoming.doctor}` : "Generate summary"}
+            />
+            <SnapshotCard
+              to="/emergency"
+              icon={profileReady ? ShieldCheck : AlertTriangle}
+              tint={profileReady ? "success" : "danger"}
+              label="Emergency"
+              value={profileReady ? "Ready" : "Incomplete"}
+              sub={profileReady ? "QR ready to share" : "Add your profile"}
+            />
+          </div>
+
+          {/* Adherence ribbon */}
+          <Link
+            to="/reminders"
+            className="block rounded-2xl border bg-card shadow-card p-4 lg:min-h-[170px] lg:p-8 mb-4 lg:mb-6 hover:bg-secondary/40 transition-colors"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium">7-day adherence</div>
+              <div className="text-xs text-muted-foreground">
+                {doses.filter((d) => d.at > Date.now() - 7 * 86400000).length} doses
+              </div>
+            </div>
+            <div className="h-2.5 rounded-full bg-secondary overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${adh}%` }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="h-full rounded-full"
+                style={{
+                  background:
+                    adh >= 80
+                      ? "linear-gradient(90deg, var(--success), var(--primary-glow))"
+                      : adh >= 50
+                        ? "linear-gradient(90deg, var(--warning), var(--primary-glow))"
+                        : "linear-gradient(90deg, var(--destructive), var(--warning))",
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between mt-2">
+              <div className="text-2xl font-bold tracking-tight">{adh}%</div>
+              <div className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                <CheckCircle2 className="size-3.5 text-success" /> on track
+              </div>
+            </div>
+          </Link>
+
+          {/* Onboarding nudge */}
+          {!profileReady && (
+            <Link
+              to="/profile"
+              className="flex items-center gap-3 lg:gap-4 rounded-2xl border border-primary/30 bg-primary/5 p-4 lg:p-6 mb-4"
+            >
+              <div className="size-10 rounded-xl bg-primary/15 grid place-items-center text-primary">
+                <ShieldCheck className="size-5" />
+              </div>
+              <div className="flex-1">
+                <div className="font-semibold text-[15px]">Complete your health profile</div>
+                <div className="text-xs text-muted-foreground">
+                  Used for AI replies, doctor summary, and emergency QR.
+                </div>
+              </div>
+              <ChevronRight className="size-5 text-primary" />
+            </Link>
+          )}
+
+          {/* SOS quick access */}
+          <Link
+            to="/emergency"
+            className="flex items-center gap-3 lg:gap-5 rounded-2xl border border-destructive/20 bg-destructive/[0.04] p-4 lg:min-h-[130px] lg:p-8"
+          >
+            <div className="size-10 rounded-xl bg-destructive/10 grid place-items-center text-destructive sos-pulse">
+              <Siren className="size-5" />
+            </div>
+            <div className="flex-1">
+              <div className="font-semibold text-[15px]">Emergency QR</div>
+              <div className="text-xs text-muted-foreground">
+                For paramedics & first responders — works offline
+              </div>
+            </div>
+            <ChevronRight className="size-5 text-destructive" />
+          </Link>
+        </div>
+      </div>
     </AppShell>
   );
 }
@@ -294,14 +323,14 @@ function QuickAction({
   return (
     <Link
       to={to}
-      className="group flex flex-col items-center justify-center rounded-2xl bg-card border shadow-card p-3 active:scale-95 transition-transform"
+      className="group flex min-h-[92px] flex-col items-center justify-center rounded-2xl bg-card border shadow-card p-3 active:scale-95 transition-transform lg:min-h-[168px] lg:p-7"
     >
       <div
-        className={`size-10 rounded-xl grid place-items-center mb-1.5 ${danger ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"} group-hover:scale-110 transition-transform`}
+        className={`size-10 lg:size-14 rounded-xl grid place-items-center mb-1.5 lg:mb-4 ${danger ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"} group-hover:scale-110 transition-transform`}
       >
-        <Icon className="size-5" />
+        <Icon className="size-5 lg:size-7" />
       </div>
-      <div className="text-[12px] font-semibold leading-tight">{label}</div>
+      <div className="text-[12px] lg:text-base font-semibold leading-tight">{label}</div>
       {sub && <div className="text-[10px] text-muted-foreground leading-tight">{sub}</div>}
     </Link>
   );
@@ -331,13 +360,13 @@ function SnapshotCard({
   return (
     <Link
       to={to}
-      className="rounded-2xl bg-card border shadow-card p-4 active:scale-[0.98] transition-transform"
+      className="rounded-2xl bg-card border shadow-card p-4 active:scale-[0.98] transition-transform lg:min-h-[220px] lg:p-8"
     >
-      <div className={`size-9 rounded-xl grid place-items-center ${tintClass}`}>
-        <Icon className="size-[18px]" />
+      <div className={`size-9 lg:size-14 rounded-xl grid place-items-center ${tintClass}`}>
+        <Icon className="size-[18px] lg:size-7" />
       </div>
-      <div className="text-[12px] text-muted-foreground mt-3 font-medium">{label}</div>
-      <div className="text-xl font-bold tracking-tight mt-0.5">{value}</div>
+      <div className="text-[12px] text-muted-foreground mt-3 lg:mt-7 font-medium">{label}</div>
+      <div className="text-xl lg:text-4xl font-bold tracking-tight mt-0.5">{value}</div>
       <div className="text-[11px] text-muted-foreground mt-0.5 truncate">{sub}</div>
     </Link>
   );

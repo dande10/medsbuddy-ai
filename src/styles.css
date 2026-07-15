@@ -38,35 +38,35 @@
 }
 
 :root {
-  --radius: 1rem;
-  /* Premium healthcare AI: soft blue-tinted surface, deep ink, electric blue primary */
-  --background: oklch(0.984 0.012 250);
-  --foreground: oklch(0.2 0.04 255);
+  --radius: 0.875rem;
+  /* Professional healthcare AI: quiet surfaces, clinical blue, and calm teal accents */
+  --background: oklch(0.986 0.008 238);
+  --foreground: oklch(0.205 0.035 246);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.04 255);
+  --card-foreground: oklch(0.205 0.035 246);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.04 255);
-  --primary: oklch(0.585 0.215 263);
+  --popover-foreground: oklch(0.205 0.035 246);
+  --primary: oklch(0.53 0.17 255);
   --primary-foreground: oklch(1 0 0);
-  --primary-glow: oklch(0.685 0.18 262);
-  --secondary: oklch(0.955 0.025 255);
-  --secondary-foreground: oklch(0.3 0.1 260);
-  --muted: oklch(0.962 0.018 250);
-  --muted-foreground: oklch(0.52 0.04 255);
-  --accent: oklch(0.94 0.06 90);
-  --accent-foreground: oklch(0.32 0.1 70);
-  --success: oklch(0.72 0.18 152);
-  --warning: oklch(0.78 0.16 80);
+  --primary-glow: oklch(0.66 0.14 238);
+  --secondary: oklch(0.955 0.014 226);
+  --secondary-foreground: oklch(0.28 0.07 239);
+  --muted: oklch(0.962 0.011 232);
+  --muted-foreground: oklch(0.49 0.035 246);
+  --accent: oklch(0.93 0.035 228);
+  --accent-foreground: oklch(0.28 0.08 245);
+  --success: oklch(0.63 0.13 156);
+  --warning: oklch(0.76 0.15 76);
   --destructive: oklch(0.64 0.24 27);
   --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.93 0.015 250);
-  --input: oklch(0.94 0.015 250);
-  --ring: oklch(0.585 0.215 263);
-  --gradient-hero: linear-gradient(135deg, oklch(0.55 0.22 263) 0%, oklch(0.7 0.18 255) 100%);
-  --gradient-card: linear-gradient(160deg, oklch(1 0 0) 0%, oklch(0.97 0.02 255) 100%);
+  --border: oklch(0.91 0.012 232);
+  --input: oklch(0.94 0.012 232);
+  --ring: oklch(0.53 0.17 255);
+  --gradient-hero: linear-gradient(135deg, oklch(0.43 0.13 255) 0%, oklch(0.57 0.16 247) 54%, oklch(0.68 0.13 232) 100%);
+  --gradient-card: linear-gradient(160deg, oklch(1 0 0) 0%, oklch(0.975 0.012 232) 100%);
   --gradient-emergency: linear-gradient(135deg, oklch(0.62 0.24 25) 0%, oklch(0.55 0.24 12) 100%);
-  --shadow-elegant: 0 12px 40px -12px color-mix(in oklab, oklch(0.585 0.215 263) 35%, transparent);
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.1);
+  --shadow-elegant: 0 18px 44px -26px rgb(15 23 42 / 0.35);
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 12px 32px -24px rgb(15 23 42 / 0.22);
 }
 
 @layer base {
@@ -74,22 +74,24 @@
     border-color: var(--color-border);
   }
   body {
-    background-color: var(--color-background);
+    background:
+      linear-gradient(180deg, oklch(0.99 0.007 238), var(--color-background) 22rem),
+      var(--color-background);
     color: var(--color-foreground);
-    font-size: 17px;
+    font-size: 18px;
     -webkit-font-smoothing: antialiased;
     font-family: -apple-system, "SF Pro Display", "Inter", system-ui, sans-serif;
   }
   h1 {
-    font-size: 2rem;
+    font-size: 2.25rem;
     font-weight: 700;
-    letter-spacing: -0.03em;
+    letter-spacing: 0;
     line-height: 1.1;
   }
   h2 {
-    font-size: 1.375rem;
+    font-size: 1.5rem;
     font-weight: 600;
-    letter-spacing: -0.015em;
+    letter-spacing: 0;
   }
   button,
   a {
@@ -115,18 +117,18 @@
   }
 
   .mic-pulse {
-    box-shadow: 0 0 0 0 oklch(0.585 0.215 263 / 0.55);
+    box-shadow: 0 0 0 0 oklch(0.53 0.17 255 / 0.5);
     animation: micPulse 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
   @keyframes micPulse {
     0% {
-      box-shadow: 0 0 0 0 oklch(0.585 0.215 263 / 0.5);
+      box-shadow: 0 0 0 0 oklch(0.53 0.17 255 / 0.45);
     }
     70% {
-      box-shadow: 0 0 0 32px oklch(0.585 0.215 263 / 0);
+      box-shadow: 0 0 0 32px oklch(0.53 0.17 255 / 0);
     }
     100% {
-      box-shadow: 0 0 0 0 oklch(0.585 0.215 263 / 0);
+      box-shadow: 0 0 0 0 oklch(0.53 0.17 255 / 0);
     }
   }
 
@@ -148,12 +150,12 @@
   .ai-orb {
     background: conic-gradient(
       from 180deg at 50% 50%,
-      oklch(0.7 0.2 255),
-      oklch(0.55 0.24 270),
-      oklch(0.65 0.22 220),
-      oklch(0.7 0.2 255)
+      oklch(0.7 0.15 232),
+      oklch(0.53 0.17 255),
+      oklch(0.62 0.15 220),
+      oklch(0.7 0.15 232)
     );
-    animation: orbSpin 8s linear infinite;
+    animation: orbSpin 12s linear infinite;
   }
   @keyframes orbSpin {
     to {
@@ -220,6 +222,91 @@
     50% {
       box-shadow: 0 0 0 24px oklch(0.64 0.24 27 / 0);
     }
+  }
+}
+
+@media (min-width: 1024px) {
+  body {
+    font-size: 20px;
+  }
+
+  h1 {
+    font-size: 2.75rem;
+  }
+
+  h2 {
+    font-size: 1.85rem;
+  }
+
+  .text-xs {
+    font-size: 1rem !important;
+    line-height: 1.45rem !important;
+  }
+
+  .text-sm {
+    font-size: 1.125rem !important;
+    line-height: 1.65rem !important;
+  }
+
+  .text-base {
+    font-size: 1.2rem !important;
+    line-height: 1.75rem !important;
+  }
+
+  .text-lg {
+    font-size: 1.4rem !important;
+    line-height: 1.9rem !important;
+  }
+
+  .text-xl {
+    font-size: 1.6rem !important;
+    line-height: 2rem !important;
+  }
+
+  .text-2xl {
+    font-size: 2rem !important;
+    line-height: 2.35rem !important;
+  }
+
+  .text-3xl {
+    font-size: 2.45rem !important;
+    line-height: 2.8rem !important;
+  }
+
+  .text-4xl {
+    font-size: 3rem !important;
+    line-height: 3.35rem !important;
+  }
+
+  .text-\[10px\] {
+    font-size: 0.9rem !important;
+    line-height: 1.2rem !important;
+  }
+
+  .text-\[11px\] {
+    font-size: 0.95rem !important;
+    line-height: 1.3rem !important;
+  }
+
+  .text-\[12px\],
+  .text-\[12\.5px\] {
+    font-size: 1rem !important;
+    line-height: 1.45rem !important;
+  }
+
+  .text-\[13px\] {
+    font-size: 1.08rem !important;
+    line-height: 1.6rem !important;
+  }
+
+  .text-\[14px\] {
+    font-size: 1.15rem !important;
+    line-height: 1.7rem !important;
+  }
+
+  .text-\[15px\] {
+    font-size: 1.25rem !important;
+    line-height: 1.8rem !important;
   }
 }
 

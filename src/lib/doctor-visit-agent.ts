@@ -7,7 +7,7 @@ import {
 } from "@/lib/alibaba-api";
 
 function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string {
-  const { profile, meds, doses, patientContext } = state;
+  const { profile, meds, doses, patientContext, symptoms } = state;
   const last7 = Date.now() - 7 * 86400000;
   const taken = doses.filter((d) => d.at >= last7 && d.status === "taken").length;
   const missed = doses.filter((d) => d.at >= last7 && d.status !== "taken").length;
@@ -27,6 +27,16 @@ function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string 
           .filter(Boolean)
           .join("; ") || "Recent medication details are limited.";
   const preVisitContext = normalizePreVisitContext(structuredContext, meds);
+  const recentSavedSymptoms = symptoms
+    .slice(0, 6)
+    .map((symptom) => symptom.name)
+    .filter(Boolean);
+  const patientContextForSummary = {
+    ...preVisitContext,
+    symptoms: preVisitContext.symptoms.length ? preVisitContext.symptoms : recentSavedSymptoms,
+    visitReason:
+      preVisitContext.visitReason || preVisitContext.symptoms[0] || recentSavedSymptoms[0] || "",
+  };
 
   return JSON.stringify(
     {
@@ -37,8 +47,8 @@ function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string 
         allergies: profile.allergies || "",
         conditions: profile.conditions || "",
       },
-      patientContext: preVisitContext,
-      savedMedications: preVisitContext.medications,
+      patientContext: patientContextForSummary,
+      savedMedications: patientContextForSummary.medications,
       medicationHistory,
     },
     null,
@@ -47,24 +57,30 @@ function buildPatientSummary(state: ReturnType<typeof useApp.getState>): string 
 }
 
 function buildReadablePreVisitFallback(state: ReturnType<typeof useApp.getState>): string {
-  const { profile, meds, patientContext } = state;
+  const { profile, meds, patientContext, symptoms } = state;
   const rawContext = filterCurrentVisitPreVisitContext(
     withDefaultPreVisitContext(patientContext),
     state,
   );
   const context = normalizePreVisitContext(rawContext, meds);
+  const recentSavedSymptoms = symptoms
+    .slice(0, 6)
+    .map((symptom) => symptom.name)
+    .filter(Boolean);
+  const currentSymptoms = context.symptoms.length ? context.symptoms : recentSavedSymptoms;
+  const visitReason = context.visitReason || currentSymptoms[0] || "";
   const sections = [
     "Before today's appointment, here's what I'll share with your doctor after your approval.",
     `This summary is for ${profile.name || "the patient"}.`,
     "",
     "Reason for Visit",
-    context.visitReason
-      ? `- ${context.visitReason}`
+    visitReason
+      ? `- ${visitReason}`
       : "- Add the main reason for today's visit before sharing with the doctor.",
     "",
     "Current Symptoms",
-    ...(context.symptoms.length
-      ? context.symptoms.map((symptom) => `- ${symptom}`)
+    ...(currentSymptoms.length
+      ? currentSymptoms.map((symptom) => `- ${symptom}`)
       : ["- No current symptoms captured from Talk yet."]),
     ...(context.onset || context.duration
       ? [
@@ -129,6 +145,84 @@ function withDefaultPreVisitContext(
     },
     context ?? {},
   );
+}
+
+type ApprovedSummarySections = {
+  reason: string;
+  symptoms: string[];
+  medications: string[];
+  allergies: string;
+  conditions: string;
+  timeline: string[];
+  concerns: string[];
+};
+
+function cleanApprovedSummaryItem(line: string): string {
+  return line
+    .replace(/^[\s•*-]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isEmptyApprovedSummaryItem(text: string): boolean {
+  return (
+    !text ||
+    /^(add the main reason|no current symptoms|not clearly captured|i don't have enough|no current medications|not recorded)$/i.test(
+      text,
+    )
+  );
+}
+
+function parseApprovedPreVisitSummary(summary = ""): ApprovedSummarySections {
+  const sections: ApprovedSummarySections = {
+    reason: "",
+    symptoms: [],
+    medications: [],
+    allergies: "",
+    conditions: "",
+    timeline: [],
+    concerns: [],
+  };
+  const headingMap: Record<string, keyof ApprovedSummarySections> = {
+    "reason for visit": "reason",
+    "current symptoms": "symptoms",
+    symptoms: "symptoms",
+    timeline: "timeline",
+    "current medications": "medications",
+    medications: "medications",
+    allergies: "allergies",
+    "existing conditions": "conditions",
+    conditions: "conditions",
+    "patient concerns": "concerns",
+    concerns: "concerns",
+  };
+  let currentSection: keyof ApprovedSummarySections | "" = "";
+
+  for (const rawLine of summary.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const headingKey = line.toLowerCase().replace(/:$/, "");
+    if (headingMap[headingKey]) {
+      currentSection = headingMap[headingKey];
+      continue;
+    }
+    if (!currentSection) continue;
+
+    const item = cleanApprovedSummaryItem(line);
+    if (isEmptyApprovedSummaryItem(item)) continue;
+
+    if (currentSection === "reason") {
+      sections.reason ||= item;
+    } else if (currentSection === "allergies") {
+      sections.allergies ||= item;
+    } else if (currentSection === "conditions") {
+      sections.conditions ||= item;
+    } else {
+      sections[currentSection].push(item);
+    }
+  }
+
+  return sections;
 }
 
 function normalizeClinicalTextForVisit(text: string): string {
@@ -459,17 +553,12 @@ function getSupportedRecordingMimeType(): string {
 function cleanSpeechToTextTranscript(text: string): string {
   let cleaned = text.replace(/\s+/g, " ").trim();
 
-  // Common STT cleanup for the live doctor demo. Keep this limited to names,
-  // wake-word variants, and non-clinical noise.
+  // Normalize common wake-word transcription variants without changing clinical content.
   const replacements: Array<[RegExp, string]> = [
-    [/\bvicente\b/gi, "Vasanthi"],
-    [/\bvasanthi\b/gi, "Vasanthi"],
     [/\bmiss\s+buddy\b/gi, "MedsBuddy"],
     [/\bmrs\s+buddy\b/gi, "MedsBuddy"],
     [/\bmiss\s+body\b/gi, "MedsBuddy"],
     [/\bmeds\s+body\b/gi, "MedsBuddy"],
-    [/\bariana\s+grande\b/gi, ""],
-    [/^listen to how is your (.+)$/i, "How is your $1?"],
   ];
 
   for (const [pattern, replacement] of replacements) {
@@ -940,51 +1029,41 @@ function buildDoctorPatientContextAnswer(
   approvedPreVisitSummary?: string,
 ): string {
   const { profile, meds, patientContext } = state;
+  const approved = parseApprovedPreVisitSummary(approvedPreVisitSummary);
   const rawContext = withDefaultPreVisitContext(patientContext);
   const context = normalizePreVisitContext(rawContext, meds);
-  const reason = context.visitReason || "The patient has not approved a reason for today yet.";
-  const symptoms = context.symptoms.length
-    ? context.symptoms
-    : approvedPreVisitSummary
-      ? [approvedPreVisitSummary.replace(/\s+/g, " ").slice(0, 120)]
-      : ["No current symptoms captured yet."];
+  const reason = approved.reason || context.visitReason;
+  const symptoms = approved.symptoms.length ? approved.symptoms : context.symptoms;
   const timeline =
-    context.onset || context.duration
-      ? [
-          context.onset ? `Started ${context.onset.replace(/\.$/, "")}.` : "",
-          context.duration ? context.duration.replace(/\.$/, ".") : "",
-        ]
-          .filter(Boolean)
-          .join(" ")
-      : "";
-  const medications = context.medications.length
-    ? context.medications
-    : ["No current medications are listed yet."];
-  const allergies = profile.allergies
-    ? `Allergies: ${profile.allergies}.`
-    : "No known allergies have been recorded.";
-  const conditions = profile.conditions ? `Conditions: ${profile.conditions}.` : "";
+    approved.timeline.length > 0
+      ? approved.timeline.join(" ")
+      : context.onset || context.duration
+        ? [
+            context.onset ? `Started ${context.onset.replace(/\.$/, "")}.` : "",
+            context.duration ? context.duration.replace(/\.$/, ".") : "",
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : "";
+  const medications = approved.medications.length ? approved.medications : context.medications;
+  const concerns = approved.concerns.length ? approved.concerns : context.concerns;
+  const allergies = approved.allergies || profile.allergies;
+  const conditions = approved.conditions || profile.conditions;
+  const responseParts = [
+    reason ? `the reason for today's visit is ${reason}` : "",
+    symptoms.length ? `current symptoms include ${symptoms.slice(0, 3).join(", ")}` : "",
+    timeline ? `timeline: ${timeline.replace(/\.$/, "")}` : "",
+    medications.length ? `current medications include ${medications.slice(0, 4).join(", ")}` : "",
+    allergies ? `allergies: ${allergies}` : "",
+    conditions ? `existing conditions: ${conditions}` : "",
+    concerns.length ? `patient concerns include ${concerns.slice(0, 2).join(", ")}` : "",
+  ].filter(Boolean);
 
-  return [
-    "Yes, Doctor.",
-    "",
-    "Based on the patient's approved pre-visit summary:",
-    "",
-    "Reason for today's visit:",
-    `• ${reason}`,
-    "",
-    "Current symptoms:",
-    ...symptoms.slice(0, 3).map((symptom) => `• ${symptom.replace(/\.$/, ".")}`),
-    ...(timeline ? [`• ${timeline}`] : []),
-    "",
-    "Current medications:",
-    ...medications.slice(0, 4).map((medication) => `• ${medication.replace(/\.$/, ".")}`),
-    "",
-    allergies,
-    conditions,
-  ]
-    .filter((line) => line !== "")
-    .join("\n");
+  if (!responseParts.length) {
+    return "Yes, Doctor. I do not have enough approved patient context yet.";
+  }
+
+  return `Yes, Doctor. Based on the approved pre-visit summary, ${responseParts.join("; ")}.`;
 }
 
 function buildPreviousVisitHistorySection(state: ReturnType<typeof useApp.getState>): string {
@@ -1047,24 +1126,32 @@ function approvedContextHasField(
   }
 }
 
-function getPatientClarificationQuestion(field: PatientContextRequestField): string {
+function getPatientDisplayName(state: ReturnType<typeof useApp.getState>): string {
+  return state.profile.name?.trim() || "the patient";
+}
+
+function getPatientClarificationQuestion(
+  field: PatientContextRequestField,
+  state: ReturnType<typeof useApp.getState>,
+): string {
+  const patientName = getPatientDisplayName(state);
   switch (field) {
     case "reason for visit":
-      return "Vasanthi, what is the main reason for today's visit?";
+      return `${patientName}, what is the main reason for today's visit?`;
     case "symptoms":
-      return "Vasanthi, what symptoms should I share with the doctor?";
+      return `${patientName}, what symptoms should I share with the doctor?`;
     case "medications":
-      return "Vasanthi, can you confirm your current medications and how often you take them?";
+      return `${patientName}, can you confirm your current medications and how often you take them?`;
     case "allergies":
-      return "Vasanthi, do you have any allergies I should record?";
+      return `${patientName}, do you have any allergies I should record?`;
     case "medical history":
-      return "Vasanthi, are there any medical conditions or previous visit details you want me to share?";
+      return `${patientName}, are there any medical conditions or previous visit details you want me to share?`;
     case "duration":
-      return "Vasanthi, when did this start and how long has it been happening?";
+      return `${patientName}, when did this start and how long has it been happening?`;
     case "concerns":
-      return "Vasanthi, what are you most concerned about today?";
+      return `${patientName}, what are you most concerned about today?`;
     case "questions for doctor":
-      return "Vasanthi, what questions would you like the doctor to answer today?";
+      return `${patientName}, what questions would you like the doctor to answer today?`;
   }
 }
 
@@ -1084,7 +1171,8 @@ function buildMissingApprovedContextResponse(
 
   return [
     `Doctor, I do not have approved ${missingText} information yet.`,
-    decision.patientClarificationQuestion || getPatientClarificationQuestion(missingFields[0]),
+    decision.patientClarificationQuestion ||
+      getPatientClarificationQuestion(missingFields[0], state),
   ].join(" ");
 }
 
@@ -1608,6 +1696,7 @@ function buildIntentResponse(
   approvedPreVisitSummary?: string,
   semanticDecision?: SemanticIntentDecision,
 ): string | null {
+  const patientName = getPatientDisplayName(state);
   switch (intent) {
     case "patient_history_request": {
       const currentContextResponse =
@@ -1618,17 +1707,17 @@ function buildIntentResponse(
         : currentContextResponse;
     }
     case "medication_history_request":
-      return `Yes, Doctor. On Vasanthi's behalf, here is the medication context I found: ${getLastMedicationText(state)}`;
+      return `Yes, Doctor. On ${patientName}'s behalf, here is the medication context I found: ${getLastMedicationText(state)}`;
     case "visit_summary_request":
-      return `Yes, Doctor. On Vasanthi's behalf, the main concerns captured so far are: ${getPatientConcernText(messages)}`;
+      return buildDoctorPatientContextAnswer(state, approvedPreVisitSummary);
     case "warning_signs_request":
-      return `Doctor, for Vasanthi's safety, the warning signs captured so far are: ${getWarningSignText(messages)}`;
+      return `Doctor, for ${patientName}'s safety, the warning signs captured so far are: ${getWarningSignText(messages)}`;
     case "doctor_answers_request":
       return `Doctor, here is what I captured from your guidance so far: ${getDoctorAnswerText(messages)}`;
     case "care_plan_instruction":
       return buildCarePlanAcknowledgement(text, messages, handledCarePlanKeys);
     case "direct_call":
-      return "Yes, Doctor. I am listening and can speak on Vasanthi's behalf. What would you like to know?";
+      return `Yes, Doctor. I am listening and can speak on ${patientName}'s behalf. What would you like to know?`;
     case "normal_conversation":
       return null;
     case "none":
@@ -1895,7 +1984,6 @@ function cleanVisitLine(text: string): string {
     .replace(STOP_TALKING_PATTERN, " ")
     .replace(START_TALKING_PATTERN, " ")
     .replace(WAKE_WORD_PATTERN, " ")
-    .replace(/\bariana\s+grande\b/gi, " ")
     .replace(/\bplease\s+be\s+quiet\b/gi, " ")
     .replace(/\bstop\s+talking\b/gi, " ")
     .replace(/\bdo\s+not\s+speak\b/gi, " ")

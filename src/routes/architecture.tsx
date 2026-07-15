@@ -7,11 +7,11 @@ import {
   Cloud,
   Database,
   FileText,
+  HeartPulse,
   Headphones,
   Lock,
   Mic,
   Server,
-  ShieldCheck,
   Stethoscope,
 } from "lucide-react";
 
@@ -54,7 +54,7 @@ const stack = [
   {
     icon: Mic,
     name: "MedsBuddy App",
-    role: "Patient interface for Talk, Doctor Visit, Emergency QR, and Visit Memory.",
+    role: "Patient interface for Prepare Visit, Doctor Visit, Emergency QR, and Visit Memory.",
   },
   {
     icon: Server,
@@ -94,7 +94,7 @@ function ArchitecturePage() {
         <div className="rounded-2xl border bg-card p-6 shadow-card">
           <div className="flex items-start gap-4">
             <div className="size-14 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
-              <ShieldCheck className="size-7" />
+              <HeartPulse className="size-7" />
             </div>
             <div className="min-w-0">
               <h2 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">
@@ -108,6 +108,36 @@ function ArchitecturePage() {
             </div>
           </div>
         </div>
+
+        <section className="rounded-2xl border bg-card p-4 shadow-card sm:p-6">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-tight">Architecture Diagram</h2>
+              <p className="mt-1 text-base text-muted-foreground">
+                Judge-ready visual showing how the frontend, Alibaba ECS backend, Qwen Cloud, voice
+                services, and visit memory connect.
+              </p>
+            </div>
+            <a
+              href="/architecture-diagram.svg"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center rounded-xl border border-primary/25 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/10"
+            >
+              Open Diagram
+            </a>
+          </div>
+          <div className="overflow-hidden rounded-2xl border bg-white">
+            <img
+              src="/architecture-diagram.svg"
+              alt="MedsBuddy architecture diagram showing patient, frontend, Alibaba Cloud ECS backend, Qwen Cloud, voice services, and visit memory database."
+              className="h-auto w-full"
+            />
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">
+            PDF upload file: <code>docs/architecture-diagram.pdf</code>
+          </p>
+        </section>
 
         <section className="rounded-2xl border bg-background p-5">
           <div className="mb-4 flex items-center justify-between gap-3">

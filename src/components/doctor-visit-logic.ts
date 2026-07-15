@@ -371,6 +371,10 @@ export function getPatientHistoryText(state: ReturnType<typeof useApp.getState>)
   return history.join(" ");
 }
 
+export function getPatientDisplayName(state: ReturnType<typeof useApp.getState>): string {
+  return state.profile.name?.trim() || "the patient";
+}
+
 export function looksLikeDoctorCarePlanInstruction(text: string): boolean {
   const clean = normalizeTranscriptText(text);
   if (/give me|tell me|show me|patient history|history|details|information/.test(clean)) {
@@ -458,23 +462,24 @@ export function buildIntentResponse(
   messages: ConversationMessage[],
   state: ReturnType<typeof useApp.getState>,
 ): string | null {
+  const patientName = getPatientDisplayName(state);
   switch (intent) {
     case "patient_history_request":
-      return `Yes, Doctor. On Vasanthi's behalf, here is the relevant patient history: ${getPatientHistoryText(state)}`;
+      return `Yes, Doctor. On ${patientName}'s behalf, here is the relevant patient history: ${getPatientHistoryText(state)}`;
     case "medication_history_request":
-      return `Yes, Doctor. On Vasanthi's behalf, here is the medication context I found: ${getLastMedicationText(state)}`;
+      return `Yes, Doctor. On ${patientName}'s behalf, here is the medication context I found: ${getLastMedicationText(state)}`;
     case "sleep_history_request":
-      return `Yes, Doctor. On Vasanthi's behalf, here is the sleep context: ${getSleepHistoryText(state)}`;
+      return `Yes, Doctor. On ${patientName}'s behalf, here is the sleep context: ${getSleepHistoryText(state)}`;
     case "visit_summary_request":
-      return `Yes, Doctor. On Vasanthi's behalf, the main concerns captured so far are: ${getPatientConcernText(messages)}`;
+      return `Yes, Doctor. On ${patientName}'s behalf, the main concerns captured so far are: ${getPatientConcernText(messages)}`;
     case "warning_signs_request":
-      return `Doctor, for Vasanthi's safety, the warning signs captured so far are: ${getWarningSignText(messages)}`;
+      return `Doctor, for ${patientName}'s safety, the warning signs captured so far are: ${getWarningSignText(messages)}`;
     case "doctor_answers_request":
       return `Doctor, here is what I captured from your guidance so far: ${getDoctorAnswerText(messages)}`;
     case "care_plan_instruction":
       return buildCarePlanAcknowledgement(text);
     case "direct_call":
-      return "Yes, Doctor. I am listening and can speak on Vasanthi's behalf. What would you like to know?";
+      return `Yes, Doctor. I am listening and can speak on ${patientName}'s behalf. What would you like to know?`;
     case "normal_conversation":
       return null;
     case "none":
@@ -518,7 +523,7 @@ export async function detectSemanticIntentWithLLM({
               "Do not behave like a wake-word assistant. Understand natural language and the visit context.",
               "MedsBuddy's job is to speak directly to the doctor on behalf of the patient when it would help the patient's care or understanding.",
               "When shouldRespond is true, write the response as spoken words MedsBuddy would say out loud in the exam room.",
-              "Prefer doctor-facing advocacy phrasing such as: Doctor, Vasanthi would like to clarify... or Doctor, on Vasanthi's behalf...",
+              "Prefer doctor-facing advocacy phrasing such as: Doctor, the patient would like to clarify... or Doctor, on the patient's behalf...",
               "Return ONLY valid JSON with this exact shape:",
               '{"speaker":"doctor|patient|medsbuddy|unknown","intent":"patient_history_request|medication_history_request|sleep_history_request|visit_summary_request|warning_signs_request|doctor_answers_request|care_plan_instruction|direct_call|normal_conversation|none","shouldRespond":true|false,"response":"short spoken response or empty string"}',
               "Set shouldRespond true only when MedsBuddy should speak now.",
@@ -727,7 +732,7 @@ export function getPatientFirstName(patientContext: string): string {
 export function buildDoctorConsentMessage(): ConversationMessage {
   return {
     speaker: "MedsBuddy",
-    text: "Hello Doctor. I am MedsBuddy, Vasanthi's AI Patient Advocate. With the patient's permission, I would like to speak on her behalf, listen during today's visit, record this conversation, and create a visit summary for her after the appointment. Do I have your consent to participate?",
+    text: "Hello Doctor. I am MedsBuddy, the patient's AI Patient Advocate. With the patient's permission, I would like to speak on her behalf, listen during today's visit, record this conversation, and create a visit summary for her after the appointment. Do I have your consent to participate?",
   };
 }
 
@@ -735,11 +740,7 @@ export function buildVisitOpeningMessages(): ConversationMessage[] {
   return [
     {
       speaker: "MedsBuddy",
-      text: "Thank you, Doctor. Vasanthi has been experiencing a fever around 101.3°F, evening dizziness after taking medication, fatigue, and leg and lower back pain for the past four to five days. She is concerned these symptoms may be related to medication timing or side effects.",
-    },
-    {
-      speaker: "MedsBuddy",
-      text: "I will continue listening and may briefly speak directly to you on Vasanthi's behalf if she needs an important clarification. You can also ask me for patient history, medication details, symptom timeline, or previous visit information at any time.",
+      text: "Thank you, Doctor. I’ll stay quiet unless you ask me a question or a care-plan detail needs clarification.",
     },
   ];
 }

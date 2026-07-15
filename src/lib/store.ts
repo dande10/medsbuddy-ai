@@ -181,15 +181,15 @@ function medicationNameKey(name: string): string {
 }
 
 const defaultProfile: Profile = {
-  name: "Vasanthi Dande",
-  dob: "1992-04-12",
+  name: "Vasanthi",
+  dob: "xxxx-xx-xx",
   bloodGroup: "O+",
   allergies: "No known drug allergies",
-  conditions: "Pregnancy",
+  conditions: "No known medical conditions",
   emergencyContacts: [
     {
-      name: "Dande Family Contact",
-      phone: "+1 555-010-2026",
+      name: "Family Contact",
+      phone: "+1 xxx-xxx-xxxx",
       relation: "Family",
     },
   ],

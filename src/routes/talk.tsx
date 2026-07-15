@@ -4,8 +4,11 @@ import { AppShell } from "@/components/app-shell";
 export const Route = createFileRoute("/talk")({
   head: () => ({
     meta: [
-      { title: "Talk — MedsBuddy" },
-      { name: "description", content: "Speak naturally with your AI patient advocate." },
+      { title: "Prepare Visit — MedsBuddy" },
+      {
+        name: "description",
+        content: "Prepare approved patient context before a doctor visit.",
+      },
     ],
   }),
   component: () => (

@@ -22,18 +22,21 @@ import { useConnectivity } from "@/lib/connectivity";
 export const Route = createFileRoute("/talk/$threadId")({
   head: () => ({
     meta: [
-      { title: "Talk — MedsBuddy" },
-      { name: "description", content: "Speak naturally with your AI patient advocate." },
+      { title: "Prepare Visit — MedsBuddy" },
+      {
+        name: "description",
+        content: "Prepare approved patient context before a doctor visit.",
+      },
     ],
   }),
   component: TalkThreadPage,
 });
 
 const SUGGESTIONS = [
-  "How are you today?",
-  "Who are you?",
-  "I have a symptom I want to remember",
-  "Help me prepare for my doctor visit",
+  "I have a sore throat and want to prepare for my doctor visit",
+  "Help me organize my symptoms for the doctor",
+  "Add these questions for my appointment",
+  "Review my medications before the visit",
 ];
 
 function isMeaningfulPatientContextMessage(text: string): boolean {
@@ -251,8 +254,25 @@ function findMedicationMention(
   });
 }
 
+function extractSymptomNameFromText(text: string): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  const patterns = [
+    /\b(?:i have|i've had|i am having|i'm having|having|with)\s+(?:a\s+|an\s+)?(.+?)(?:\s+(?:and|for|since|that|because|to prepare|want to|before my|before the)\b|[.!?]|$)/i,
+    /\b(?:symptoms?|concern|issue|problem)\s+(?:is|are|include|includes)?\s*(?:a\s+|an\s+)?(.+?)(?:\s+(?:and|for|since|that|because|to prepare|want to)\b|[.!?]|$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = clean.match(pattern)?.[1]?.trim();
+    if (match && !/\bdoctor visit|appointment|prepare|medication|medicine\b/i.test(match)) {
+      return match.replace(/^(?:a|an|the)\s+/i, "").trim();
+    }
+  }
+
+  return "";
+}
+
 function normalizeAgentSymptomItems(items: unknown[], fallbackText: string) {
-  return items
+  const normalized = items
     .map((item) => {
       const record = asRecord(item);
       return {
@@ -264,6 +284,20 @@ function normalizeAgentSymptomItems(items: unknown[], fallbackText: string) {
       };
     })
     .filter((symptom) => symptom.name);
+  if (normalized.length) return normalized;
+
+  const fallbackSymptom = extractSymptomNameFromText(fallbackText);
+  return fallbackSymptom
+    ? [
+        {
+          name: fallbackSymptom,
+          notes: fallbackText,
+          onset: "",
+          duration: "",
+          severity: 5,
+        },
+      ]
+    : [];
 }
 
 function buildAgentRouterState(state: ReturnType<typeof useApp.getState>) {
@@ -599,6 +633,20 @@ function TalkThreadPage() {
           "";
         const timeline = stringValue(data.timeline || onset || duration);
         const patientNotes = unique(arrayValue(data.patientNotes).map((item) => stringValue(item)));
+        const existingSymptomKeys = new Set(
+          useApp.getState().symptoms.map((symptom) => symptom.name.toLowerCase()),
+        );
+
+        for (const symptom of symptomItems) {
+          const name = stringValue(symptom.name);
+          if (!name || existingSymptomKeys.has(name.toLowerCase())) continue;
+          addSymptom({
+            name,
+            severity: normalizeSeverity(symptom.severity),
+            notes: stringValue(symptom.notes) || text,
+          });
+          existingSymptomKeys.add(name.toLowerCase());
+        }
 
         updateCurrentVisitPatientContext(
           {
@@ -766,23 +814,31 @@ function TalkThreadPage() {
 
   return (
     <>
-      <div className="flex flex-col" style={{ minHeight: "calc(100vh - 200px)" }}>
+      <div
+        className="flex flex-col lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-6"
+        style={{ minHeight: "calc(100vh - 200px)" }}
+      >
         {/* AI header */}
-        <div className="flex items-center gap-3 mb-4">
+        <aside className="flex items-center gap-3 mb-4 lg:sticky lg:top-24 lg:min-h-[360px] lg:self-start lg:flex-col lg:items-start lg:rounded-2xl lg:border lg:bg-card lg:p-7 lg:shadow-card">
           <button
             onClick={() => setDrawerOpen(true)}
-            className="size-10 rounded-full bg-card border grid place-items-center text-muted-foreground hover:bg-secondary transition shrink-0"
+            className="size-10 rounded-xl bg-card border grid place-items-center text-muted-foreground hover:bg-secondary transition shrink-0 lg:self-end lg:-mb-10"
             aria-label="Chat history"
           >
             <History className="size-4" />
           </button>
-          <AiOrb size={56} speaking={speaking} listening={autoListen} thinking={busy} />
+          <div className="hidden lg:block">
+            <AiOrb size={132} speaking={speaking} listening={autoListen} thinking={busy} />
+          </div>
+          <div className="lg:hidden">
+            <AiOrb size={56} speaking={speaking} listening={autoListen} thinking={busy} />
+          </div>
           <div className="flex-1 min-w-0">
             <div className="text-[11px] text-muted-foreground font-medium truncate">
               {thread?.title || "MedsBuddy AI"}
             </div>
             <div className="text-base font-semibold tracking-tight leading-tight">
-              {busy ? "Thinking…" : speaking ? "Speaking…" : "How can I help?"}
+              {busy ? "Preparing…" : speaking ? "Speaking…" : "Prepare doctor visit"}
             </div>
           </div>
           <button
@@ -792,142 +848,144 @@ function TalkThreadPage() {
           >
             <Plus className="size-3.5" /> New
           </button>
-        </div>
+        </aside>
 
         {/* Chat */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 pr-1 -mx-1 px-1">
-          {offline && (
-            <div className="rounded-2xl border border-primary/25 bg-primary/[0.05] p-3.5">
-              <div className="flex items-center gap-2 font-semibold text-primary text-[14px]">
-                <CloudOff className="size-4" /> Limited Offline Mode
-              </div>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12.5px] mt-2">
-                <div>
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-0.5">
-                    Available
-                  </div>
-                  <div>· Health notes</div>
-                  <div>· Symptoms</div>
-                  <div>· Doctor Summary</div>
-                  <div>· Emergency QR</div>
+        <section className="flex min-h-0 flex-1 flex-col rounded-2xl lg:min-h-[640px] lg:border lg:bg-card/70 lg:p-6 lg:shadow-card">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 pr-1 -mx-1 px-1">
+            {offline && (
+              <div className="rounded-2xl border border-primary/25 bg-primary/[0.05] p-3.5">
+                <div className="flex items-center gap-2 font-semibold text-primary text-[14px]">
+                  <CloudOff className="size-4" /> Limited Offline Mode
                 </div>
-                <div>
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-0.5">
-                    Unavailable
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12.5px] mt-2">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-0.5">
+                      Available
+                    </div>
+                    <div>· Health notes</div>
+                    <div>· Symptoms</div>
+                    <div>· Doctor Summary</div>
+                    <div>· Emergency QR</div>
                   </div>
-                  <div className="text-muted-foreground">· AI Patient Advocate</div>
-                  <div className="text-muted-foreground">· Medical search</div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-0.5">
+                      Unavailable
+                    </div>
+                    <div className="text-muted-foreground">· AI Patient Advocate</div>
+                    <div className="text-muted-foreground">· Medical search</div>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {messages.length === 0 && (
-            <div className="py-6">
-              <div className="text-center text-sm text-muted-foreground mb-4 inline-flex items-center gap-1.5 mx-auto w-full justify-center">
-                <Sparkles className="size-4 text-primary" />
-                Try one of these
+            {messages.length === 0 && (
+              <div className="py-6">
+                <div className="text-center text-sm text-muted-foreground mb-4 inline-flex items-center gap-1.5 mx-auto w-full justify-center">
+                  <Sparkles className="size-4 text-primary" />
+                  Start with a pre-visit note
+                </div>
+                <div className="grid gap-2">
+                  {SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => handleUtterance(s)}
+                      className="text-left rounded-2xl border bg-card hover:bg-secondary/50 shadow-card px-4 py-3 text-[15px] transition active:scale-[0.98] lg:px-5 lg:py-4"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="grid gap-2">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => handleUtterance(s)}
-                    className="text-left rounded-2xl border bg-card hover:bg-secondary/50 shadow-card px-4 py-3 text-[15px] transition active:scale-[0.98]"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+            )}
 
-          <AnimatePresence initial={false}>
-            {messages.map((m) => (
-              <motion.div
-                key={m.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                <div
-                  className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed shadow-card ${
-                    m.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-br-md"
-                      : "bg-card border rounded-bl-md"
-                  }`}
+            <AnimatePresence initial={false}>
+              {messages.map((m) => (
+                <motion.div
+                  key={m.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  {m.content}
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed shadow-card lg:px-5 lg:py-3.5 ${
+                      m.role === "user"
+                        ? "bg-primary text-primary-foreground rounded-br-md"
+                        : "bg-card border rounded-bl-md"
+                    }`}
+                  >
+                    {m.content}
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+
+            {busy && (
+              <div className="flex justify-start">
+                <div className="bg-card border rounded-2xl rounded-bl-md px-4 py-3 inline-flex items-center gap-1.5">
+                  <span className="size-2 rounded-full bg-primary typing-dot" />
+                  <span
+                    className="size-2 rounded-full bg-primary typing-dot"
+                    style={{ animationDelay: "0.15s" }}
+                  />
+                  <span
+                    className="size-2 rounded-full bg-primary typing-dot"
+                    style={{ animationDelay: "0.3s" }}
+                  />
                 </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-
-          {busy && (
-            <div className="flex justify-start">
-              <div className="bg-card border rounded-2xl rounded-bl-md px-4 py-3 inline-flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-primary typing-dot" />
-                <span
-                  className="size-2 rounded-full bg-primary typing-dot"
-                  style={{ animationDelay: "0.15s" }}
-                />
-                <span
-                  className="size-2 rounded-full bg-primary typing-dot"
-                  style={{ animationDelay: "0.3s" }}
-                />
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* Composer */}
-        <div className="pt-4 mt-3">
-          <div className="flex items-center justify-center mb-4">
-            <MicButton
-              onTranscript={handleUtterance}
-              busy={busy}
-              speaking={speaking}
-              autoStart={autoListen}
-              size="xl"
-            />
+            )}
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const t = input.trim();
-              if (!t) return;
-              setInput("");
-              handleUtterance(t);
-            }}
-            className="flex gap-2 items-center bg-card border shadow-card rounded-full px-2 py-1.5"
-          >
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Or type a message…"
-              className="flex-1 bg-transparent px-3 py-2 text-[15px] outline-none"
-            />
-            <button
-              type="submit"
-              className="size-10 rounded-full bg-primary text-primary-foreground grid place-items-center disabled:opacity-50"
-              disabled={!input.trim()}
-              aria-label="Send"
-            >
-              <Send className="size-4" />
-            </button>
-          </form>
-          {messages.length > 0 && (
-            <button
-              onClick={() => {
-                stopSpeaking();
-                if (thread) clearThread(thread.id);
+
+          {/* Composer */}
+          <div className="pt-4 mt-3">
+            <div className="flex items-center justify-center mb-4">
+              <MicButton
+                onTranscript={handleUtterance}
+                busy={busy}
+                speaking={speaking}
+                autoStart={autoListen}
+                size="xl"
+              />
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const t = input.trim();
+                if (!t) return;
+                setInput("");
+                handleUtterance(t);
               }}
-              className="mt-3 mx-auto block text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+              className="flex gap-2 items-center bg-card border shadow-card rounded-full px-2 py-1.5 lg:px-3 lg:py-2"
             >
-              <Trash2 className="size-3" /> Clear this conversation
-            </button>
-          )}
-        </div>
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Or type a message…"
+                className="flex-1 bg-transparent px-3 py-2 text-[15px] outline-none"
+              />
+              <button
+                type="submit"
+                className="size-10 rounded-full bg-primary text-primary-foreground grid place-items-center disabled:opacity-50"
+                disabled={!input.trim()}
+                aria-label="Send"
+              >
+                <Send className="size-4" />
+              </button>
+            </form>
+            {messages.length > 0 && (
+              <button
+                onClick={() => {
+                  stopSpeaking();
+                  if (thread) clearThread(thread.id);
+                }}
+                className="mt-3 mx-auto block text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+              >
+                <Trash2 className="size-3" /> Clear this conversation
+              </button>
+            )}
+          </div>
+        </section>
       </div>
 
       {/* History drawer */}
