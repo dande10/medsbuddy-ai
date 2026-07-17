@@ -2,7 +2,7 @@
 
 I built MedsBuddy, an AI Patient Advocate for doctor visits, for the Global AI Hackathon Series with Qwen Cloud.
 
-The idea came from a simple problem: healthcare visits can be overwhelming. Patients often forget symptoms, miss medication details, or leave without fully understanding follow-up instructions. I wanted to build something that supports communication during the visit, not just documentation afterward.
+The idea came from a simple problem: healthcare visits can be overwhelming. Patients often forget symptoms, miss medication details, or leave without fully understanding follow-up instructions. I wanted to build something that supports communication during the visit, not just after-visit notes.
 
 MedsBuddy helps patients before, during, and after an appointment:
 
@@ -18,7 +18,7 @@ The architecture uses:
 - Alibaba Cloud ECS for backend APIs and visit memory.
 - React, TypeScript, and Vite for the frontend.
 - FastAPI and SQLite for the backend proof deployment.
-- ElevenLabs for speech-to-text and text-to-speech in the live demo.
+- Speech-to-text for live transcription and ElevenLabs for spoken responses.
 - Offline support for Emergency SOS, medications, visit summaries, and key health profile information.
 
 What I learned: healthcare AI is not just about answering questions. It is about context, privacy, timing, and knowing when not to speak. The hardest part was designing the AI to be helpful without interrupting the doctor-patient relationship.

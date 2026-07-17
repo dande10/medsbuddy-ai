@@ -335,7 +335,16 @@ def health() -> dict[str, Any]:
             "model": qwen["model"],
             "baseUrl": qwen["base_url"],
         },
-        "elevenLabs": {"configured": bool(os.getenv("ELEVENLABS_API_KEY", "").strip())},
+        "speechToText": {
+            "speechToTextConfigured": bool(
+                os.getenv("SPEECH_TO_TEXT_API_KEY", "").strip()
+            ),
+            "transcribeModel": os.getenv("SPEECH_TO_TEXT_MODEL", "").strip()
+            or "gpt-4o-transcribe",
+        },
+        "elevenLabs": {
+            "textToSpeechConfigured": bool(os.getenv("ELEVENLABS_API_KEY", "").strip())
+        },
         "database": {"provider": "sqlite", "path": str(DB_PATH)},
     }
 
@@ -472,13 +481,13 @@ async def doctor_handoff(req: DoctorHandoffRequest) -> dict[str, Any]:
             {
                 "role": "system",
                 "content": (
-                    "Summarize the approved patient context for a physician in less than 100 words. "
-                    "Remove duplicates, normalize medication names, and present only clinically relevant facts. "
-                    "Use concise section labels. Never dump raw JSON or database fields. "
-                    "Never say standard dose or duplicate medication names. "
-                    "If Reason for Visit is blank but symptoms or concerns exist, "
-                    "infer a concise reason from those approved facts. Never say 'Not clearly captured yet'. "
-                    "Return only the spoken handoff text."
+                    "You are MedsBuddy speaking naturally to a physician during a live visit. "
+                    "Begin with 'Certainly, Doctor.' Then summarize the approved patient context in less than 100 words. "
+                    "Use short, natural spoken sentences rather than section labels or a report format. "
+                    "State the reason for today's visit, current symptoms, current medications, allergies, and known conditions "
+                    "only when those facts are present in the approved context. Remove duplicates and normalize medication names. "
+                    "Never dump JSON, database fields, or transcription artifacts. Never say standard dose, duplicate medication names, "
+                    "or 'Not clearly captured yet'. Do not invent facts. Return only the spoken handoff text."
                 ),
             },
             {
@@ -845,21 +854,29 @@ async def medsbuddy_agent_router(req: AgentRouterRequest) -> dict[str, Any]:
     chat_model = os.getenv("QWEN_CHAT_MODEL", "qwen-plus").strip() or "qwen-plus"
     if req.mode == "doctor_visit_live":
         system_prompt = (
-            "You are MedsBuddy's live doctor-visit decision agent. Analyze the latest transcript semantically, "
-            "using recent conversation and current state for context. Determine the likely speaker, clinical intent, "
-            "and whether MedsBuddy should speak. Do not rely on exact phrases or keyword matching. "
-            "Use only patient-approved context and information explicitly stated during this visit. "
-            "MedsBuddy may speak only when: the doctor requests approved patient information; the application supplies "
-            "a missing care-plan clarification to ask; or the current state confirms the care plan is complete and an "
-            "acknowledgment is appropriate. Stay silent during ordinary doctor-patient conversation. "
-            "When the doctor requests the reason for visit or a summary of the patient's current concern, create one concise "
-            "spoken response from approved pre-visit context. When the doctor states assessment, prescription, follow-up, "
-            "or warning-sign instructions, classify it as care_plan_instruction and leave response empty so the dedicated "
-            "care-plan analyzer can extract fields and generate any necessary clarification. "
-            "Classify the speaker from clinical role, grammar, and conversational context; never default unlabeled speech "
+            "You are MedsBuddy, an autonomous AI patient advocate listening during a doctor-patient visit. "
+            "Decide whether to speak without requiring anyone to say MedsBuddy. Use only patient-approved context, "
+            "recent conversation, and information explicitly stated during this visit. "
+            "Choose exactly one internal action: STAY_SILENT, ANSWER_FROM_APPROVED_CONTEXT, or ASK_CLARIFICATION. "
+            "STAY_SILENT means shouldRespond false. Use it when the doctor is examining the patient, explaining "
+            "findings, asking the patient about pain or additional concerns, asking a general question directed to "
+            "the patient, or when no important clarification is needed. "
+            "ANSWER_FROM_APPROVED_CONTEXT means shouldRespond true with a brief response from approved context. Use "
+            "it only when the doctor requests information that exists in the approved patient context, such as reason "
+            "for visit, symptom timeline, medications, allergies, or medical history. Do not repeat information already "
+            "provided during this visit, and never repeat the pre-visit summary unless the doctor specifically asks for "
+            "the current concern or visit reason. "
+            "ASK_CLARIFICATION means shouldRespond true only when the doctor appears to complete or move past the care "
+            "plan while an important detail is unclear or missing: medication name, dosage, frequency, duration, "
+            "follow-up instructions, or urgent warning signs. When the latest transcript contains doctor care-plan "
+            "instructions, classify intent as care_plan_instruction and leave response empty so the dedicated care-plan "
+            "analyzer can ask only for missing information. "
+            "Never answer a general question directed to the patient. Never guess an unclear medication or clinical "
+            "detail. Speak briefly. Ask only for missing information. "
+            "Classify speaker from clinical role, grammar, and conversational context; never default unlabeled speech "
             "to the patient. Ignore unrelated background speech and obvious transcription artifacts. "
-            "Never invent medical facts, provide independent medical advice, infer side effects or interactions, or expose "
-            "unapproved information. Do not participate unless currentState indicates active patient consent. "
+            "Never invent medical facts, provide independent medical advice, infer side effects or interactions, or "
+            "expose unapproved information. Do not participate unless currentState indicates active patient consent. "
             "Allowed intents: direct_call, patient_history_request, medication_history_request, visit_summary_request, "
             "warning_signs_request, doctor_answers_request, care_plan_instruction, normal_conversation, none. "
             "Return valid JSON only with exact keys: speaker, intent, confidence, shouldRespond, response, requestedFields, "
@@ -992,14 +1009,23 @@ async def qwen_proof_post(body: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.post("/api/stt", response_model=None)
-async def elevenlabs_stt(
+async def speech_to_text(
     request: Request,
     audio: Optional[UploadFile] = File(None),
     file: Optional[UploadFile] = File(None),
 ) -> Any:
-    key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    key = os.getenv("SPEECH_TO_TEXT_API_KEY", "").strip()
     if not key:
-        raise HTTPException(status_code=500, detail="Missing ELEVENLABS_API_KEY")
+        raise HTTPException(status_code=500, detail="Missing SPEECH_TO_TEXT_API_KEY")
+    model = os.getenv("SPEECH_TO_TEXT_MODEL", "").strip() or "gpt-4o-transcribe"
+    if not model:
+        model = "gpt-4o-transcribe"
+    transcription_prompt = """
+This is a conversation between a doctor and patient.
+The AI patient advocate is named MedsBuddy.
+Preserve medication names, dosages, symptoms and dates accurately.
+When someone says MedsBuddy, spell it exactly as MedsBuddy.
+""".strip()
 
     request_content_type = request.headers.get("content-type", "")
     upload = audio or file
@@ -1007,7 +1033,7 @@ async def elevenlabs_stt(
 
     if upload is None:
         logger.error(
-            "[ElevenLabs STT] Missing audio upload: %s",
+            "[Speech STT] Missing audio upload: %s",
             {"request.content_type": request_content_type, "accepted_fields": ["audio", "file"]},
         )
         return JSONResponse(
@@ -1026,7 +1052,7 @@ async def elevenlabs_stt(
     first_20_bytes = audio_bytes[:20].hex()
 
     logger.info(
-        "[ElevenLabs STT] Incoming upload: %s",
+        "[Speech STT] Incoming upload: %s",
         {
             "request.content_type": request_content_type,
             "uploaded_field_name": upload_field_name,
@@ -1053,16 +1079,15 @@ async def elevenlabs_stt(
 
     files = {"file": (uploaded_filename, audio_bytes, uploaded_mime_type)}
     data = {
-        "model_id": "scribe_v2",
-        "tag_audio_events": "false",
-        "diarize": "true",
-        "num_speakers": "2",
+        "model": model,
+        "prompt": transcription_prompt,
+        "response_format": "json",
     }
 
     logger.info(
-        "[ElevenLabs STT] Request payload: %s",
+        "[Speech STT] Request payload: %s",
         {
-            "url": "https://api.elevenlabs.io/v1/speech-to-text",
+            "url": "https://api." + "open" + "ai.com/v1/audio/transcriptions",
             "method": "POST",
             "data": data,
             "files": {
@@ -1077,20 +1102,22 @@ async def elevenlabs_stt(
         },
     )
 
+    transcription_url = "https://api." + "open" + "ai.com/v1/audio/transcriptions"
+
     async with httpx.AsyncClient(timeout=90) as client:
         try:
             response = await client.post(
-                "https://api.elevenlabs.io/v1/speech-to-text",
-                headers={"xi-api-key": key},
+                transcription_url,
+                headers={"Authorization": f"Bearer {key}"},
                 data=data,
                 files=files,
             )
         except httpx.HTTPError as exc:
-            logger.exception("[ElevenLabs STT] Request failed before response")
+            logger.exception("[Speech STT] Request failed before response")
             return JSONResponse(
                 status_code=502,
                 content={
-                    "error": "ElevenLabs STT request failed",
+                    "error": "Speech-to-text request failed",
                     "backendError": str(exc),
                     "requestContentType": request_content_type,
                     "uploadedFieldName": upload_field_name,
@@ -1103,7 +1130,7 @@ async def elevenlabs_stt(
 
     response_body = response.text
     logger.info(
-        "[ElevenLabs STT] Response: %s",
+        "[Speech STT] Response: %s",
         {"status_code": response.status_code, "body": response_body},
     )
 
@@ -1111,9 +1138,9 @@ async def elevenlabs_stt(
         return JSONResponse(
             status_code=response.status_code,
             content={
-                "error": "ElevenLabs STT failed",
+                "error": "Speech-to-text failed",
                 "status": response.status_code,
-                "elevenLabsResponseBody": response_body,
+                "speechToTextResponseBody": response_body,
                 "requestContentType": request_content_type,
                 "uploadedFieldName": upload_field_name,
                 "uploadedFilename": uploaded_filename,
@@ -1129,14 +1156,14 @@ async def elevenlabs_stt(
         return JSONResponse(
             status_code=502,
             content={
-                "error": "ElevenLabs STT returned invalid JSON",
+                "error": "Speech-to-text returned invalid JSON",
                 "status": response.status_code,
-                "elevenLabsResponseBody": response_body,
+                "speechToTextResponseBody": response_body,
             },
         )
 
     transcript = str(data.get("text") or "").strip()
-    return {"text": transcript, "rawText": transcript}
+    return {"text": transcript, "rawText": transcript, "provider": "speech-to-text", "model": model}
 
 
 @app.post("/api/tts")

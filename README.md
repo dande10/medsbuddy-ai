@@ -1,6 +1,6 @@
 # MedsBuddy AI
 
-MedsBuddy AI is a Qwen Cloud-powered AI patient advocate for doctor visits. With patient consent, it listens to the visit, understands patient and doctor intent, retrieves relevant patient history and medication context, speaks up when clarification is needed, and automatically generates structured visit documentation, follow-up actions, and plain-language summaries.
+MedsBuddy AI is a Qwen Cloud-powered AI patient advocate for doctor visits. With patient consent, it listens to the visit, understands patient and doctor intent, retrieves relevant patient history and medication context, speaks up when clarification is needed, and automatically generates structured visit summaries, follow-up actions, and plain-language care plans.
 
 ## Qwen Cloud Hackathon Submission
 
@@ -9,11 +9,9 @@ MedsBuddy AI is a Qwen Cloud-powered AI patient advocate for doctor visits. With
 - **Agent loop:** Listen -> Understand -> Reason -> Retrieve patient information -> Help the doctor -> Summarize
 - **Primary workflow:** Doctor Visit / AI Patient Advocate mode
 
-See `docs/DEVPOST_SUBMISSION.md` for the copy-paste Devpost pitch, demo video script, judging map, and submission checklist.
-
 ## Why Qwen Cloud
 
-MedsBuddy needs more than a generic chat reply. During a doctor visit, the agent has to classify who is speaking, understand clinical intent, retrieve approved patient context, decide when to stay silent, detect missing care-plan details, and produce structured summaries. Qwen Cloud was a good fit because it provides an OpenAI-compatible API, strong reasoning for multi-step agent workflows, and a clean server-side deployment path through Alibaba Cloud.
+MedsBuddy needs more than a generic chat reply. During a doctor visit, the agent has to classify who is speaking, understand clinical intent, retrieve approved patient context, decide when to stay silent, detect missing care-plan details, and produce structured summaries. Qwen Cloud was a good fit because it provides a chat-completions API, strong reasoning for multi-step agent workflows, and a clean server-side deployment path through Alibaba Cloud.
 
 The project uses Qwen Cloud for:
 
@@ -23,7 +21,8 @@ The project uses Qwen Cloud for:
 - Doctor handoff generation from approved patient context.
 - Structured visit summary generation after the appointment.
 
-Voice capture and playback use ElevenLabs for the demo, while Qwen Cloud remains the AI reasoning layer.
+Voice capture uses speech-to-text, MedsBuddy reasoning runs through Qwen Cloud,
+and spoken responses use ElevenLabs Text-to-Speech.
 
 ## AI Workflow
 
@@ -48,9 +47,7 @@ MedsBuddy stores key patient information locally so patients can still access im
 
 - **Public repository:** `https://github.com/dande10/medsbuddy-ai`
 - **License:** MIT, included at `LICENSE`
-- **Architecture diagram:** `docs/architecture-diagram.pdf`, `docs/architecture.mmd`, and the in-app `/architecture` route
-- **Deployment proof guide:** `docs/ALIBABA_ECS_FASTAPI_DEPLOYMENT.md`
-- **Qwen / Alibaba proof guide:** `docs/HACKATHON_QWEN_CLOUD_PROOF.md`
+- **Architecture diagram:** available in the in-app `/architecture` route
 
 Recommended demo flow: use the Talk page to prepare a sore-throat visit, approve the pre-visit summary, run the Doctor Visit AI Patient Advocate flow, show MedsBuddy answering doctor questions, show MedsBuddy asking for missing follow-up and warning signs after an Amoxicillin care plan, then show the structured visit summary.
 
@@ -102,18 +99,9 @@ flowchart LR
   frontend -. Advocate + Summarize .-> doctor
 ```
 
-The same diagram is available as `docs/architecture-diagram.pdf` for upload, with editable Mermaid source in `docs/architecture.mmd`.
-
 ## Qwen Cloud Integration
 
-The app no longer uses Featherless AI. All AI chat calls now go through the backend client in `src/lib/qwen-cloud.ts`, which calls the Qwen Cloud OpenAI-compatible chat completions API.
-
-Important proof files:
-
-- `src/lib/qwen-cloud.ts` - Qwen Cloud API client.
-- `src/lib/ai-chat.functions.ts` - MedsBuddy AI server function using Qwen Cloud.
-- `src/routes/api/qwen-proof.ts` - backend proof endpoint for judges.
-- `docs/HACKATHON_QWEN_CLOUD_PROOF.md` - copy-pasteable proof call and request shape.
+The app no longer uses Featherless AI. All AI chat calls now go through the backend client in `src/lib/qwen-cloud.ts`, which calls the Qwen Cloud chat completions API.
 
 ## Alibaba ECS Backend Proof for Devpost
 
@@ -143,10 +131,10 @@ Backend logs include:
 - `Visit memory saved`
 - `Visit memory retrieved`
 
-ElevenLabs voice support is available through backend endpoints:
+Voice support is available through backend endpoints:
 
-- `POST /api/stt`
-- `POST /api/tts`
+- `POST /api/stt` - Speech-to-text creates the corrected doctor-visit transcript.
+- `POST /api/tts` - ElevenLabs speaks MedsBuddy responses aloud.
 
 Deployment guide and curl proof commands:
 
@@ -179,7 +167,9 @@ Supported variables:
 | `QWEN_API_BASE_URL`           | No               | Defaults to `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`. Change this if your Alibaba Cloud account uses another DashScope region endpoint. |
 | `MEDSBUDDY_API_BASE_URL`      | Vercel proxy     | Server-only Alibaba ECS backend URL, for example `http://YOUR_ECS_IP`. Use this on Vercel so the browser calls same-origin HTTPS proxy routes.          |
 | `VITE_MEDSBUDDY_API_BASE_URL` | Local/HTTPS only | Browser-visible backend URL. Leave blank for Vercel if ECS is HTTP. Use only for local HTTP dev or an HTTPS backend domain.                             |
-| `ELEVENLABS_API_KEY`          | No               | Enables optional speech-to-text and text-to-speech for Doctor Visit voice.                                                                              |
+| `SPEECH_TO_TEXT_API_KEY`      | Voice input      | Enables speech-to-text for Doctor Visit microphone transcription.                                                                                       |
+| `SPEECH_TO_TEXT_MODEL`        | No               | Defaults to `gpt-4o-transcribe`.                                                                                                                       |
+| `ELEVENLABS_API_KEY`          | Voice output     | Enables ElevenLabs text-to-speech for MedsBuddy spoken responses.                                                                                      |
 | `DATABASE_PROVIDER`           | No               | Use `sqlite` for the FastAPI backend demo database.                                                                                                     |
 | `DATABASE_URL`                | No               | SQLite URL for visit memory, for example `sqlite:///./medsbuddy.db`.                                                                                    |
 

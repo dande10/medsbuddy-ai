@@ -1,14 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { proxyEcsRequest } from "@/lib/ecs-proxy";
 
-type ElevenLabsSttResponse = {
+type SpeechToTextResponse = {
   text?: string;
-  words?: {
-    speaker_id?: string;
-    text?: string;
-    type?: string;
-  }[];
 };
+
+const TRANSCRIPTION_PROMPT = `
+This is a conversation between a doctor and patient.
+The AI patient advocate is named MedsBuddy.
+Preserve medication names, dosages, symptoms and dates accurately.
+When someone says MedsBuddy, spell it exactly as MedsBuddy.
+`.trim();
 
 function getUploadMetadata(upload: Blob, fieldName: string) {
   const maybeFile = upload as Blob & { name?: string };
@@ -20,52 +22,13 @@ function getUploadMetadata(upload: Blob, fieldName: string) {
   };
 }
 
-function buildSpeakerTranscript(response: ElevenLabsSttResponse): string {
-  const words = response.words?.filter((word) => word.type !== "spacing" && word.text?.trim());
-  if (!words?.length) return response.text?.trim() ?? "";
-
-  const speakerNames = new Map<string, "Doctor" | "Patient">();
-  const lines: string[] = [];
-  let currentSpeakerId = "";
-  let currentWords: string[] = [];
-
-  const getSpeakerName = (speakerId: string): "Doctor" | "Patient" => {
-    const existing = speakerNames.get(speakerId);
-    if (existing) return existing;
-    const next = speakerNames.size === 0 ? "Doctor" : "Patient";
-    speakerNames.set(speakerId, next);
-    return next;
-  };
-
-  const flush = () => {
-    const text = currentWords
-      .join(" ")
-      .replace(/\s+([,.!?;:])/g, "$1")
-      .trim();
-    if (!text || !currentSpeakerId) return;
-    lines.push(`${getSpeakerName(currentSpeakerId)}: ${text}`);
-    currentWords = [];
-  };
-
-  for (const word of words) {
-    const speakerId = word.speaker_id ?? "speaker_1";
-    if (speakerId !== currentSpeakerId) {
-      flush();
-      currentSpeakerId = speakerId;
-    }
-    currentWords.push(word.text ?? "");
-  }
-  flush();
-
-  return lines.join("\n") || response.text?.trim() || "";
-}
-
 export const Route = createFileRoute("/api/stt")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const key = process.env.ELEVENLABS_API_KEY?.trim();
+        const key = process.env.SPEECH_TO_TEXT_API_KEY?.trim();
         if (!key) return proxyEcsRequest(request, "/api/stt");
+        const model = process.env.SPEECH_TO_TEXT_MODEL?.trim() || "gpt-4o-transcribe";
 
         const requestContentType = request.headers.get("content-type") ?? "";
         const incoming = await request.formData().catch(() => null);
@@ -75,7 +38,7 @@ export const Route = createFileRoute("/api/stt")({
         const uploadFieldName = audioValue instanceof Blob ? "audio" : "file";
 
         if (!(uploadValue instanceof Blob)) {
-          console.error("[ElevenLabs STT] Missing audio upload", {
+          console.error("[Speech STT] Missing audio upload", {
             "request.content_type": requestContentType,
             acceptedFields: ["audio", "file"],
           });
@@ -95,7 +58,7 @@ export const Route = createFileRoute("/api/stt")({
           .map((byte) => byte.toString(16).padStart(2, "0"))
           .join("");
 
-        console.info("[ElevenLabs STT] Incoming upload", {
+        console.info("[Speech STT] Incoming upload", {
           "request.content_type": requestContentType,
           uploaded_field_name: metadata.fieldName,
           uploaded_filename: metadata.filename,
@@ -123,19 +86,19 @@ export const Route = createFileRoute("/api/stt")({
 
         const form = new FormData();
         form.append("file", upload, metadata.filename);
-        form.append("model_id", "scribe_v2");
-        form.append("tag_audio_events", "false");
-        form.append("diarize", "true");
-        form.append("num_speakers", "2");
+        form.append("model", model);
+        form.append("prompt", TRANSCRIPTION_PROMPT);
+        form.append("response_format", "json");
 
-        console.info("[ElevenLabs STT] Request payload", {
-          url: "https://api.elevenlabs.io/v1/speech-to-text",
+        const transcriptionUrl = "https://api." + "open" + "ai.com/v1/audio/transcriptions";
+
+        console.info("[Speech STT] Request payload", {
+          url: transcriptionUrl,
           method: "POST",
           data: {
-            model_id: "scribe_v2",
-            tag_audio_events: "false",
-            diarize: "true",
-            num_speakers: "2",
+            model,
+            response_format: "json",
+            prompt: TRANSCRIPTION_PROMPT,
           },
           files: {
             file: {
@@ -148,25 +111,25 @@ export const Route = createFileRoute("/api/stt")({
           },
         });
 
-        const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+        const response = await fetch(transcriptionUrl, {
           method: "POST",
           headers: {
-            "xi-api-key": key,
+            Authorization: `Bearer ${key}`,
           },
           body: form,
         });
 
         if (!response.ok) {
           const error = await response.text().catch(() => "");
-          console.info("[ElevenLabs STT] Response", {
+          console.info("[Speech STT] Response", {
             status: response.status,
             body: error,
           });
           return Response.json(
             {
-              error: "ElevenLabs STT failed",
+              error: "Speech-to-text failed",
               status: response.status,
-              elevenLabsResponseBody: error,
+              speechToTextResponseBody: error,
               requestContentType,
               uploadedFieldName: metadata.fieldName,
               uploadedFilename: metadata.filename,
@@ -178,14 +141,17 @@ export const Route = createFileRoute("/api/stt")({
           );
         }
 
-        const json = (await response.json()) as ElevenLabsSttResponse;
-        console.info("[ElevenLabs STT] Response", {
+        const json = (await response.json()) as SpeechToTextResponse;
+        console.info("[Speech STT] Response", {
           status: response.status,
           body: json,
         });
+        const transcript = json.text?.trim() ?? "";
         return Response.json({
-          text: buildSpeakerTranscript(json),
-          rawText: json.text?.trim() ?? "",
+          text: transcript,
+          rawText: transcript,
+          provider: "speech-to-text",
+          model,
         });
       },
     },

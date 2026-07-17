@@ -14,7 +14,7 @@ MedsBuddy is an AI Patient Advocate powered by Qwen Cloud that helps patients be
 
 ## Inspiration
 
-Healthcare visits can be overwhelming. Patients often forget to mention important symptoms, misunderstand medication instructions, or leave without remembering follow-up recommendations. Existing healthcare applications often focus on reminders, symptom tracking, or documentation, but very few actively support communication during a medical consultation.
+Healthcare visits can be overwhelming. Patients often forget to mention important symptoms, misunderstand medication instructions, or leave without remembering follow-up recommendations. Existing healthcare applications often focus on reminders, symptom tracking, or after-visit notes, but very few actively support communication during a medical consultation.
 
 We built MedsBuddy as an AI Patient Advocate that helps patients prepare before appointments, supports communication during consultations, and ensures patients leave with a clear understanding of their care plan. The goal is to use AI to strengthen, not replace, the relationship between patients and healthcare providers.
 
@@ -63,7 +63,7 @@ Patients often forget symptoms, miss medication details, misunderstand follow-up
 
 ## How MedsBuddy Is Different
 
-| Capability | Symptom Checker Apps | Clinical Documentation AI | Patient Portals | MedsBuddy |
+| Capability | Symptom Checker Apps | Clinical Note AI | Patient Portals | MedsBuddy |
 | --- | --- | --- | --- | --- |
 | AI-powered pre-visit preparation | Yes | No | No | Yes |
 | Structured patient context | Limited | No | Limited | Yes |
@@ -82,13 +82,13 @@ Unlike traditional healthcare applications that focus on only one stage of the p
 
 ## Qwen Cloud Use
 
-MedsBuddy uses Qwen Cloud through Alibaba Cloud Model Studio's OpenAI-compatible chat completions API. The backend sends visit transcript, patient context, medication history, and prior visit summaries to Qwen Cloud for semantic intent detection and response generation.
+MedsBuddy uses Qwen Cloud through Alibaba Cloud Model Studio's chat completions API. The backend sends visit transcript, patient context, medication history, and prior visit summaries to Qwen Cloud for semantic intent detection and response generation.
 
 Qwen Cloud powers patient context extraction, doctor-intent reasoning, care-plan gap detection, doctor handoff generation, and structured visit summary generation.
 
 ## Voice Architecture
 
-MedsBuddy uses ElevenLabs Speech-to-Text for live transcription and ElevenLabs Text-to-Speech for voice responses. Qwen Cloud performs semantic reasoning on the approved patient context and live consultation transcript to generate context-aware responses and structured visit summaries.
+MedsBuddy uses speech-to-text for live doctor-visit transcription and ElevenLabs Text-to-Speech for voice responses. Qwen Cloud performs semantic reasoning on the approved patient context and live consultation transcript to generate context-aware responses and structured visit summaries.
 
 ## Demo
 
@@ -118,7 +118,7 @@ Structured Patient Context
   ↓
 Doctor Visit
   ↓
-ElevenLabs Speech-to-Text
+Speech-to-Text
   ↓
 Qwen Doctor Agent
   ↓
@@ -157,7 +157,7 @@ AI:
 
 Voice:
 
-- ElevenLabs Speech-to-Text
+- Speech-to-Text
 - ElevenLabs Text-to-Speech
 
 Deployment:
@@ -179,9 +179,9 @@ The app combines React, TanStack Start backend routes, Qwen Cloud chat completio
 
 MedsBuddy addresses a real healthcare communication gap: patients often forget what to say, miss warning signs, or misunderstand medication instructions. The app improves patient confidence and doctor context.
 
-### Presentation and Documentation
+### Presentation
 
-The repo includes a Dockerfile, MIT license, Qwen proof endpoint, architecture diagram, README, Devpost submission guide, and demo script.
+The repo includes a Dockerfile, MIT license, Qwen proof endpoint, architecture diagram, README, and demo script.
 
 ## Challenges We Ran Into
 

@@ -8,7 +8,8 @@ This deploys the MedsBuddy backend on Alibaba Cloud ECS using:
 - systemd auto-start
 - SQLite visit memory
 - Qwen Cloud reasoning
-- ElevenLabs STT/TTS
+- Speech-to-Text
+- ElevenLabs Text-to-Speech
 
 ## Backend Architecture
 
@@ -28,7 +29,8 @@ Visit Memory DB
 Response
 ```
 
-ElevenLabs STT/TTS is available through the backend endpoints `/api/stt` and `/api/tts`.
+Speech-to-text is available through `/api/stt`, and ElevenLabs Text-to-Speech is
+available through `/api/tts`.
 For the hackathon demo, transcript text can also be sent directly to the MedsBuddy Qwen endpoints.
 
 ## ECS Security Group
@@ -50,6 +52,8 @@ On ECS, the backend uses `/opt/medsbuddy-backend/.env`:
 DASHSCOPE_API_KEY=your_qwen_or_dashscope_key
 QWEN_API_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen3.7-max
+SPEECH_TO_TEXT_API_KEY=your_speech_to_text_key
+SPEECH_TO_TEXT_MODEL=gpt-4o-transcribe
 ELEVENLABS_API_KEY=your_elevenlabs_key
 CORS_ORIGINS=https://medsbuddy-ai-9lnv.vercel.app,http://localhost:5173
 DATABASE_URL=sqlite:///./medsbuddy.db

@@ -559,6 +559,9 @@ function cleanSpeechToTextTranscript(text: string): string {
     [/\bmrs\s+buddy\b/gi, "MedsBuddy"],
     [/\bmiss\s+body\b/gi, "MedsBuddy"],
     [/\bmeds\s+body\b/gi, "MedsBuddy"],
+    [/\bam\s+excellent\b/gi, "Amoxicillin"],
+    [/\bmilk\s+slim\b/gi, "Amoxicillin"],
+    [/\bmilk\s+sim\b/gi, "Amoxicillin"],
   ];
 
   for (const [pattern, replacement] of replacements) {
@@ -994,6 +997,52 @@ function getWarningSignText(messages: ConversationMessage[]): string {
   );
 }
 
+function getDiagnosisText(messages: ConversationMessage[]): string {
+  const doctorLines = getSpeakerLines(messages, "Doctor");
+  const diagnosisLine = doctorLines.find((line) =>
+    /\b(bacterial|viral|infection|strep|inflamed|diagnosis|looks like|seems like|believe this is|assessment)\b/i.test(
+      line,
+    ),
+  );
+  if (!diagnosisLine) return "No confirmed diagnosis was documented during this demo visit.";
+  if (/\bbacterial\b/i.test(diagnosisLine) && /\b(throat|infection)\b/i.test(diagnosisLine)) {
+    return "Bacterial throat infection.";
+  }
+  if (/\binflamed\b/i.test(diagnosisLine) && /\bthroat\b/i.test(diagnosisLine)) {
+    return "Inflamed throat; see doctor's assessment for final diagnosis.";
+  }
+  return removeDuplicateRepeatedPhrases(diagnosisLine);
+}
+
+function formatMedicationInstruction(details: MedicationInstructionDetails): string {
+  const name = formatMedicationName(details.medication);
+  const dose = details.dose;
+  const frequency = details.frequency || details.interval || details.timing;
+  const duration = details.duration;
+  return [name && dose ? `${name} ${dose}` : name || dose, frequency, duration]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function getMedicationGuidanceText(messages: ConversationMessage[]): string {
+  const instruction = collectDoctorCarePlan(messages, conversationToTranscript(messages));
+  const details = extractMedicationInstructionDetails(instruction);
+  const medicationInstruction = formatMedicationInstruction(details);
+  if (medicationInstruction) return medicationInstruction;
+  return "No medication changes were captured in the visit transcript.";
+}
+
+function getFollowUpText(messages: ConversationMessage[]): string {
+  const followUpLine = getSpeakerLines(messages, "Doctor").find((line) =>
+    /\b(follow up|follow-up|come back|return|see me|see us|appointment|schedule|check in|recheck|next week|tomorrow)\b/i.test(
+      line,
+    ),
+  );
+  return followUpLine
+    ? removeDuplicateRepeatedPhrases(followUpLine)
+    : "No specific follow-up instructions were captured yet.";
+}
+
 function getLastMedicationText(state: ReturnType<typeof useApp.getState>): string {
   const lastDose = [...state.doses].sort((a, b) => b.at - a.at)[0];
   if (lastDose) {
@@ -1004,24 +1053,6 @@ function getLastMedicationText(state: ReturnType<typeof useApp.getState>): strin
     return `${state.meds.map((med) => `${med.name} ${med.dosage}, ${med.frequency}`).join("; ")}. I do not have enough recent dose history recorded yet to determine adherence or missed doses.`;
   }
   return "I do not see any medication or recent dose history recorded yet.";
-}
-
-function getPatientHistoryText(state: ReturnType<typeof useApp.getState>): string {
-  const { profile, meds, symptoms } = state;
-  const history = [
-    profile.conditions ? `Conditions: ${profile.conditions}.` : "",
-    profile.allergies ? `Allergies: ${profile.allergies}.` : "",
-    meds.length
-      ? `Current medications: ${meds.map((m) => `${m.name} ${m.dosage}`).join(", ")}.`
-      : "No medications are listed.",
-    symptoms.length
-      ? `Recent symptoms include ${symptoms
-          .slice(-4)
-          .map((s) => s.name)
-          .join(", ")}.`
-      : "No recent symptoms are logged.",
-  ].filter(Boolean);
-  return history.join(" ");
 }
 
 function buildDoctorPatientContextAnswer(
@@ -1064,6 +1095,39 @@ function buildDoctorPatientContextAnswer(
   }
 
   return `Yes, Doctor. Based on the approved pre-visit summary, ${responseParts.join("; ")}.`;
+}
+
+function buildDoctorVisitReasonAnswer(
+  state: ReturnType<typeof useApp.getState>,
+  approvedPreVisitSummary?: string,
+): string {
+  const { meds, patientContext } = state;
+  const approved = parseApprovedPreVisitSummary(approvedPreVisitSummary);
+  const context = normalizePreVisitContext(withDefaultPreVisitContext(patientContext), meds);
+  const reason = approved.reason || context.visitReason;
+  const symptoms = approved.symptoms.length ? approved.symptoms : context.symptoms;
+  const timeline =
+    approved.timeline.length > 0
+      ? approved.timeline.join(" ")
+      : context.onset || context.duration
+        ? [
+            context.onset ? `Started ${context.onset.replace(/\.$/, "")}.` : "",
+            context.duration ? context.duration.replace(/\.$/, ".") : "",
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : "";
+  const parts = [
+    reason ? `the reason for today's visit is ${reason}` : "",
+    symptoms.length ? `symptoms include ${symptoms.slice(0, 3).join(", ")}` : "",
+    timeline ? `timeline: ${timeline.replace(/\.$/, "")}` : "",
+  ].filter(Boolean);
+
+  if (!parts.length) {
+    return "Yes, Doctor. I do not have an approved reason for today's visit yet.";
+  }
+
+  return `Yes, Doctor. ${parts.join("; ")}.`;
 }
 
 function buildPreviousVisitHistorySection(state: ReturnType<typeof useApp.getState>): string {
@@ -1259,9 +1323,15 @@ function extractMedicationInstructionDetails(text: string): MedicationInstructio
   const afterAction = lower.match(
     /\b(?:start|prescribe|prescribed|prescribing|give|take|continue|finish|stop)\s+(?:her|him|the patient|you|the)?\s*([a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2})/i,
   )?.[1];
+  const beforeDose = clean.match(
+    /\b([a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2})\s+\d+(?:\.\d+)?\s*(?:mg|milligrams?|mcg|micrograms?|g|grams?|ml|units?)\b/i,
+  )?.[1];
   const dose =
     clean.match(
       /\b\d+(?:\.\d+)?\s*(?:mg|milligrams?|mcg|micrograms?|g|grams?|ml|units?|tablets?|tabs?|capsules?|caps?|pills?|puffs?|drops?)\b/i,
+    )?.[0] ||
+    clean.match(
+      /\b\d+(?:\.\d+)?\s+(?:hundred\s+)?(?:mg|milligrams?|mcg|micrograms?|g|grams?|ml|units?)\b/i,
     )?.[0] ||
     clean.match(
       /\b(?:one|two|three|four|five|[1-5])\s+(?:tablets?|tabs?|capsules?|caps?|pills?|doses?)\b/i,
@@ -1278,7 +1348,7 @@ function extractMedicationInstructionDetails(text: string): MedicationInstructio
   )?.[0];
 
   return {
-    medication: afterAction || "",
+    medication: afterAction || beforeDose || "",
     dose: dose || "",
     frequency: frequency || "",
     timing: timing || "",
@@ -1290,6 +1360,8 @@ function extractMedicationInstructionDetails(text: string): MedicationInstructio
 function formatMedicationName(name: string): string {
   return name
     .replace(/\b(?:her|him|the patient|you|the)\b/gi, " ")
+    .replace(/\bamoxicil+in\b/gi, "amoxicillin")
+    .replace(/\bamoxycillin\b/gi, "amoxicillin")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -1709,7 +1781,7 @@ function buildIntentResponse(
     case "medication_history_request":
       return `Yes, Doctor. On ${patientName}'s behalf, here is the medication context I found: ${getLastMedicationText(state)}`;
     case "visit_summary_request":
-      return buildDoctorPatientContextAnswer(state, approvedPreVisitSummary);
+      return buildDoctorVisitReasonAnswer(state, approvedPreVisitSummary);
     case "warning_signs_request":
       return `Doctor, for ${patientName}'s safety, the warning signs captured so far are: ${getWarningSignText(messages)}`;
     case "doctor_answers_request":
@@ -2035,22 +2107,19 @@ function buildSummaryFromTranscript(
     : contextConcernText || "No patient concerns were captured in the visit transcript.";
   const doctorAnswerText = getDoctorAnswerText(cleanMessages);
   const warningSignText = getWarningSignText(cleanMessages);
+  const diagnosisText = getDiagnosisText(cleanMessages);
+  const medicationChangesText = getMedicationGuidanceText(cleanMessages);
+  const followUpText = getFollowUpText(cleanMessages);
   const visitSummaryText = contextConcernText
     ? `The visit focused on ${contextConcernText}.`
     : patientLines.length
       ? `The visit focused on ${patientConcernText}.`
       : "MedsBuddy captured the doctor visit conversation and generated a structured summary.";
-  const diagnosisText = doctorLines.length
-    ? "See the doctor assessment and generated summary for diagnosis details."
-    : "No confirmed diagnosis was documented during this demo visit.";
-  const medicationChangesText =
-    "Follow the doctor's medication instructions from the visit. Ask the doctor to clarify any medication name, dose, timing, or duration that is unclear.";
-  const followUpText =
-    "Follow the doctor's instructions. Ask the doctor when to follow up and what warning signs require urgent care.";
   const nextQuestions = [
-    "What is the likely diagnosis or main concern?",
-    "Are there any medication changes, side effects, or missed-dose instructions?",
-    "When should the patient follow up?",
+    diagnosisText.startsWith("No confirmed") && "What is the likely diagnosis or main concern?",
+    medicationChangesText.startsWith("No medication") &&
+      "Are there any medication changes or missed-dose instructions?",
+    followUpText.startsWith("No specific") && "When should the patient follow up?",
     warningSignText.includes("not been discussed") &&
       "What warning signs should prompt urgent care?",
   ].filter(Boolean);

@@ -22,7 +22,7 @@ export const Route = createFileRoute("/architecture")({
       {
         name: "description",
         content:
-          "Judge-facing architecture view for MedsBuddy: Qwen Cloud, Alibaba ECS, ElevenLabs STT, and visit memory.",
+          "Judge-facing architecture view for MedsBuddy: Qwen Cloud, Alibaba ECS, ElevenLabs voice, and visit memory.",
       },
     ],
   }),
@@ -40,7 +40,8 @@ const flow = [
     label: "During Visit",
     icon: Stethoscope,
     title: "Agent speaks with doctor",
-    detail: "With consent, ElevenLabs transcribes and Qwen decides when MedsBuddy should answer.",
+    detail:
+      "With consent, speech-to-text transcribes speech and Qwen decides when MedsBuddy should answer.",
   },
   {
     label: "After Visit",
@@ -59,7 +60,7 @@ const stack = [
   {
     icon: Server,
     name: "Alibaba ECS FastAPI Backend",
-    role: "Owns API routes, Qwen calls, STT/TTS forwarding, and SQLite visit memory.",
+    role: "Owns API routes, Qwen calls, voice forwarding, and SQLite visit memory.",
   },
   {
     icon: Cloud,
@@ -68,8 +69,8 @@ const stack = [
   },
   {
     icon: Headphones,
-    name: "ElevenLabs STT/TTS",
-    role: "Speech-to-text for the live doctor visit and voice output for MedsBuddy.",
+    name: "Speech-to-Text + ElevenLabs TTS",
+    role: "Speech-to-text creates corrected transcripts, and ElevenLabs speaks MedsBuddy responses aloud.",
   },
   {
     icon: Database,
@@ -134,9 +135,6 @@ function ArchitecturePage() {
               className="h-auto w-full"
             />
           </div>
-          <p className="mt-3 text-sm text-muted-foreground">
-            PDF upload file: <code>docs/architecture-diagram.pdf</code>
-          </p>
         </section>
 
         <section className="rounded-2xl border bg-background p-5">

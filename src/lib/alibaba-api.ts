@@ -72,7 +72,7 @@ export async function transcribeAudio(audio: Blob): Promise<{ text: string; rawT
 
   if (!response.ok) {
     const error = await response.text().catch(() => "");
-    throw new Error(error || `ElevenLabs STT failed: ${response.status}`);
+    throw new Error(error || `Speech-to-text failed: ${response.status}`);
   }
 
   return (await response.json()) as { text: string; rawText?: string };

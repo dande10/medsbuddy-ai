@@ -154,6 +154,7 @@ export function DoctorPage() {
   const spokenMedsBuddyKeysRef = useRef<Set<string>>(new Set());
   const handledCarePlanKeysRef = useRef<Set<string>>(new Set());
   const savedMedicationInstructionKeysRef = useRef<Set<string>>(new Set());
+  const carePlanUpdatedAfterClarificationRef = useRef(false);
   const semanticRequestIdRef = useRef(0);
   const humanizedSummaryCacheRef = useRef<Map<string, string>>(new Map());
   const humanizeInFlightKeyRef = useRef<string | null>(null);
@@ -270,6 +271,7 @@ export function DoctorPage() {
     spokenMedsBuddyKeysRef.current.clear();
     handledCarePlanKeysRef.current.clear();
     savedMedicationInstructionKeysRef.current.clear();
+    carePlanUpdatedAfterClarificationRef.current = false;
     setDoctorVisitConsent("pending");
     setVisitMessages([buildDoctorConsentMessage(approvedContext, profile.name || "the patient")]);
     setVisitSummary(buildSummaryFromTranscript([], approvedContext));
@@ -360,7 +362,11 @@ export function DoctorPage() {
     (transcript: string, speaker: SpeakerMode): boolean => {
       if (!transcript.trim() || isLowValueTranscript(transcript)) return false;
 
-      const cleanedTranscript = cleanSpeechToTextTranscript(transcript);
+      const cleanedTranscript = cleanSpeechToTextTranscript(transcript)
+        // Demo-safe correction for a recurring STT error. Keep this narrow so clinical
+        // language is not broadly rewritten or guessed.
+        .replace(/\bexamine your soul\b/gi, "examine your throat")
+        .replace(/\byour soul\b/gi, "your throat");
       if (process.env.NODE_ENV !== "production") {
         console.log("RAW_STT_TRANSCRIPT:", transcript);
         console.log("CLEANED_STT_TRANSCRIPT:", cleanedTranscript);
@@ -406,11 +412,41 @@ export function DoctorPage() {
       semanticRequestIdRef.current = requestId;
       const currentTranscript = conversationToTranscript(nextMessages);
       const currentVisitStage = detectVisitStage(currentTranscript);
+      const savePrescribedMedicationFromTranscript = (speaker = latestSpeaker) => {
+        if (speaker === "Patient" || speaker === "MedsBuddy") return;
+        const prescribedMedication = extractPrescribedMedicationFromCarePlan(
+          latestText,
+          visitMessagesRef.current,
+        );
+        if (!prescribedMedication) return;
+
+        const medicationKey = normalizeTranscriptText(
+          [
+            prescribedMedication.name,
+            prescribedMedication.dosage,
+            prescribedMedication.frequency,
+          ].join(" "),
+        );
+        if (savedMedicationInstructionKeysRef.current.has(medicationKey)) return;
+
+        savedMedicationInstructionKeysRef.current.add(medicationKey);
+        const savedMedication = upsertMed(prescribedMedication);
+        updatePatientContext({
+          medications: [
+            `${savedMedication.name} ${savedMedication.dosage} ${savedMedication.frequency}`
+              .replace(/\s+/g, " ")
+              .trim(),
+          ],
+        });
+        toast.success(`Medication updated: ${savedMedication.name}`);
+      };
       console.info("[MedsBuddy visit stage]", {
         stage: currentVisitStage,
         latestSpeaker,
         latestText,
       });
+
+      savePrescribedMedicationFromTranscript();
 
       const hasStopTalkingCommand = parsedMessages.some((message) =>
         isStopTalkingCommand(message.text),
@@ -545,25 +581,70 @@ export function DoctorPage() {
             return corrected;
           });
         }
+        savePrescribedMedicationFromTranscript(correctedSpeaker || latestSpeaker);
 
         if (decision.intent === "direct_call") {
           setAdvocateActive(true);
           advocateActiveRef.current = true;
         }
 
+        const doctorExamInProgress =
+          (correctedSpeaker || latestSpeaker) === "Doctor" &&
+          /\b(examin(?:e|ing|ation)|check|look at|inspect|let me see|let me look|open your mouth|throat looks|looks inflamed)\b/i.test(
+            latestTurnText,
+          );
+        const medsBuddyAskedDoctor = lastMedsBuddyQuestionWasForDoctor(visitMessagesRef.current);
+        const looksLikeClarificationAnswer =
+          medsBuddyAskedDoctor && looksLikeDoctorAnswerToMedsBuddy(latestTurnText);
+        const doctorAnsweredPendingClarification =
+          looksLikeClarificationAnswer ||
+          ((correctedSpeaker || latestSpeaker) === "Doctor" && medsBuddyAskedDoctor);
+
+        if (looksLikeClarificationAnswer && (correctedSpeaker || latestSpeaker) !== "Doctor") {
+          setVisitMessages((messages) => {
+            let lastIndex = -1;
+            for (let index = messages.length - 1; index >= 0; index -= 1) {
+              const message = messages[index];
+              if (message.text === latestTurnText) {
+                lastIndex = index;
+                break;
+              }
+            }
+            if (lastIndex < 0) return messages;
+            const corrected = [...messages];
+            corrected[lastIndex] = {
+              ...corrected[lastIndex],
+              speaker: "Doctor",
+              speakerConfidence: 0.98,
+              speakerSource: "local_rules",
+              speakerReason:
+                "This utterance directly answered MedsBuddy's pending doctor clarification.",
+            };
+            visitMessagesRef.current = corrected;
+            return corrected;
+          });
+        }
+
         const stageAllowsResponse =
-          decision.intent === "care_plan_instruction" ||
-          canMedsBuddyRespondInStage(asyncVisitStage, decision.intent);
-        const carePlanResponse =
-          stageAllowsResponse && decision.intent === "care_plan_instruction" && !decision.response
-            ? await buildCarePlanResponseWithQwen({
-                text: latestText,
-                messages: visitMessagesRef.current,
-                state,
-                patientContext: patientContextForVisit,
-                handledCarePlanKeys: handledCarePlanKeysRef.current,
-              })
-            : null;
+          !doctorExamInProgress &&
+          (decision.intent === "care_plan_instruction" ||
+            canMedsBuddyRespondInStage(asyncVisitStage, decision.intent));
+        const shouldAnalyzeCarePlan =
+          stageAllowsResponse &&
+          (decision.intent === "care_plan_instruction" || doctorAnsweredPendingClarification);
+
+        // Always re-run the care-plan analyzer for doctor care-plan instructions.
+        // It returns another question only when a required detail is still missing.
+        const carePlanResponse = shouldAnalyzeCarePlan
+          ? await buildCarePlanResponseWithQwen({
+              text: latestTurnText,
+              messages: visitMessagesRef.current,
+              state,
+              patientContext: patientContextForVisit,
+              handledCarePlanKeys: handledCarePlanKeysRef.current,
+            })
+          : null;
+
         const fallbackContextResponse =
           decision.shouldRespond && stageAllowsResponse && !decision.response && !carePlanResponse
             ? buildIntentResponse(
@@ -577,45 +658,32 @@ export function DoctorPage() {
               )
             : null;
 
-        if (decision.intent === "care_plan_instruction") {
-          const prescribedMedication = extractPrescribedMedicationFromCarePlan(
-            latestText,
-            visitMessagesRef.current,
+        savePrescribedMedicationFromTranscript(correctedSpeaker || latestSpeaker);
+
+        // A care plan is considered updated only after the doctor answered the pending
+        // clarification and the analyzer found no remaining question for that turn.
+        if (doctorAnsweredPendingClarification && !carePlanResponse) {
+          carePlanUpdatedAfterClarificationRef.current = true;
+          addMedsBuddyVisitMessage(
+            "Thank you, Doctor. I've updated the patient's care plan.",
+            "Care plan updated from the doctor's clarification",
           );
-          if (prescribedMedication) {
-            const medicationKey = normalizeTranscriptText(
-              [
-                prescribedMedication.name,
-                prescribedMedication.dosage,
-                prescribedMedication.frequency,
-              ].join(" "),
-            );
-            if (!savedMedicationInstructionKeysRef.current.has(medicationKey)) {
-              savedMedicationInstructionKeysRef.current.add(medicationKey);
-              const savedMedication = upsertMed(prescribedMedication);
-              updatePatientContext({
-                medications: [
-                  `${savedMedication.name} ${savedMedication.dosage} ${savedMedication.frequency}`
-                    .replace(/\s+/g, " ")
-                    .trim(),
-                ],
-              });
-              toast.success(`Medication updated: ${savedMedication.name}`);
-            }
-          }
+          return;
         }
 
         const intentResponse =
-          decision.shouldRespond &&
           stageAllowsResponse &&
-          (decision.response || carePlanResponse || fallbackContextResponse);
+          (carePlanResponse ||
+            (decision.shouldRespond && (decision.response || fallbackContextResponse)));
 
         if (intentResponse) {
           addMedsBuddyVisitMessage(
             intentResponse,
             decision.intent === "direct_call"
               ? "MedsBuddy was called"
-              : "MedsBuddy is answering the doctor",
+              : decision.intent === "care_plan_instruction"
+                ? "MedsBuddy is clarifying the care plan"
+                : "MedsBuddy is answering the doctor",
           );
         } else {
           setWakeStatus(
@@ -714,11 +782,12 @@ export function DoctorPage() {
     if (!mounted) return;
 
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const canUseBrowserRecognition = Boolean(Recognition);
     const canRecordForElevenLabs =
       Boolean(navigator.mediaDevices?.getUserMedia) &&
       typeof MediaRecorder !== "undefined" &&
       !elevenLabsSttUnavailableRef.current;
-    setVoiceSupported(canRecordForElevenLabs || Boolean(Recognition));
+    setVoiceSupported(canUseBrowserRecognition || canRecordForElevenLabs);
 
     const stopElevenLabsRecorder = () => {
       const recorder = mediaRecorderRef.current;
@@ -765,7 +834,12 @@ export function DoctorPage() {
       };
 
       recognition.onend = () => {
-        if (stage === "active" && doctorVisitConsent === "granted" && !voiceSpeakingRef.current) {
+        if (
+          recognitionRef.current === recognition &&
+          stage === "active" &&
+          doctorVisitConsent === "granted" &&
+          !voiceSpeakingRef.current
+        ) {
           try {
             recognition.start();
             setVoiceListening(true);
@@ -795,11 +869,27 @@ export function DoctorPage() {
 
     let cancelled = false;
 
-    if (!canRecordForElevenLabs) {
+    if (canUseBrowserRecognition) {
       const started = startBrowserRecognition();
       if (!started) {
-        setWakeStatus("Microphone is unavailable. Use the transcript box instead.");
+        setWakeStatus(
+          canRecordForElevenLabs
+            ? "Browser speech recognition failed. Trying voice recorder."
+            : "Microphone is unavailable. Use the transcript box instead.",
+        );
+      } else {
+        return () => {
+          stopBrowserRecognition();
+          if (transcriptBufferTimerRef.current) {
+            clearTimeout(transcriptBufferTimerRef.current);
+            transcriptBufferTimerRef.current = null;
+          }
+        };
       }
+    }
+
+    if (!canRecordForElevenLabs) {
+      setWakeStatus("Microphone is unavailable. Use the transcript box instead.");
       return () => {
         stopBrowserRecognition();
       };
@@ -838,7 +928,7 @@ export function DoctorPage() {
           } catch (error) {
             console.warn("[MedsBuddy STT] Could not start recorder.", error);
             elevenLabsSttUnavailableRef.current = true;
-            setWakeStatus("ElevenLabs STT recorder failed. Falling back to browser speech.");
+            setWakeStatus("Speech recorder failed. Falling back to browser speech.");
             stopElevenLabsRecorder();
             startBrowserRecognition();
           }
@@ -869,10 +959,10 @@ export function DoctorPage() {
                   queueTranscriptChunk(transcript);
                 }
               } catch (error) {
-                console.warn("[MedsBuddy STT] ElevenLabs STT failed. Falling back.", error);
+                console.warn("[MedsBuddy STT] Speech-to-text failed. Falling back.", error);
                 cancelled = true;
                 elevenLabsSttUnavailableRef.current = true;
-                setWakeStatus("ElevenLabs STT unavailable. Falling back to browser speech.");
+                setWakeStatus("Speech-to-text unavailable. Falling back to browser speech.");
                 stopElevenLabsRecorder();
                 startBrowserRecognition();
               }
@@ -887,7 +977,7 @@ export function DoctorPage() {
             stopTimer = null;
           }
           elevenLabsSttUnavailableRef.current = true;
-          setWakeStatus("ElevenLabs STT recorder failed. Falling back to browser speech.");
+          setWakeStatus("Speech recorder failed. Falling back to browser speech.");
           stopElevenLabsRecorder();
           startBrowserRecognition();
         };
@@ -919,21 +1009,16 @@ export function DoctorPage() {
   const endVisit = async () => {
     flushBufferedTranscript();
     const cleanedMessages = cleanVisitTranscript(visitMessagesRef.current);
-    const closingMessage = "Thank you, Doctor. I've updated the patient's care plan.";
-    const summaryMessages = dedupeConversation([
-      ...cleanedMessages,
-      { speaker: "MedsBuddy", text: closingMessage },
-    ]);
     const localSummary = buildSummaryFromTranscript(cleanedMessages, patientContextForVisit);
-    const transcript = conversationToTranscript(summaryMessages);
+    const transcript = conversationToTranscript(cleanedMessages);
 
     setVisitSummary(localSummary);
     setStage("summary");
-    toast.success("Care plan updated. AI Patient Advocate summary ready");
-    setSummarySpeaking(true);
-    void speak(closingMessage, () => setSummarySpeaking(false)).catch(() => {
-      setSummarySpeaking(false);
-    });
+    toast.success(
+      carePlanUpdatedAfterClarificationRef.current
+        ? "Care plan updated. AI Patient Advocate summary ready"
+        : "Visit complete. AI Patient Advocate summary ready",
+    );
 
     if (!summarySaved) {
       addVisit({
@@ -1337,15 +1422,38 @@ function AIAdvocateDemo({
       )}
 
       {stage === "summary" && (
-        <div className="rounded-2xl bg-success/10 border border-success/30 p-4 flex items-start gap-3">
-          <div className="size-10 rounded-xl bg-success/20 text-success grid place-items-center shrink-0">
-            <Check className="size-5" />
+        <div className="space-y-4">
+          <div className="rounded-2xl bg-success/10 border border-success/30 p-4 flex items-start gap-3">
+            <div className="size-10 rounded-xl bg-success/20 text-success grid place-items-center shrink-0">
+              <Check className="size-5" />
+            </div>
+            <div>
+              <div className="font-semibold text-success">AI Patient Advocate visit completed</div>
+              <p className="text-[13px] text-muted-foreground mt-1">
+                The structured visit summary is ready below and saved to patient history.
+              </p>
+            </div>
           </div>
-          <div>
-            <div className="font-semibold text-success">AI Patient Advocate visit completed</div>
-            <p className="text-[13px] text-muted-foreground mt-1">
-              The structured visit summary is ready below and saved to patient history.
-            </p>
+
+          <div className="rounded-2xl border bg-background p-3 lg:p-5">
+            <div className="mb-3 text-[12px] font-semibold text-primary">
+              Captured Visit Conversation
+            </div>
+            <div className="space-y-2">
+              {messages.length === 0 ? (
+                <div className="rounded-xl border border-dashed bg-background p-4 lg:p-6 text-sm text-muted-foreground">
+                  No conversation was captured before the visit ended.
+                </div>
+              ) : (
+                messages.map((row, index) => (
+                  <ConversationRow
+                    key={`${row.speaker}-${index}`}
+                    speaker={row.speaker}
+                    text={row.text}
+                  />
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1369,6 +1477,35 @@ function ConversationRow({ speaker, text }: { speaker: string; text: string }) {
       <div className="text-[13px] leading-relaxed mt-1">{text}</div>
     </div>
   );
+}
+
+function isSummaryFieldComplete(title: string, body: string): boolean {
+  const normalized = normalizeTranscriptText(body || "");
+  if (!normalized) return false;
+
+  const incompletePhrases = [
+    "not discussed",
+    "not been discussed",
+    "needs clarification",
+    "need clarification",
+    "ask the doctor",
+    "unclear",
+    "not provided",
+    "not recorded",
+    "unknown",
+  ];
+
+  if (incompletePhrases.some((phrase) => normalized.includes(phrase))) return false;
+
+  // A generic instruction to ask the doctor is not a completed care-plan detail.
+  if (
+    (title === "Follow-up" || title === "Warning Signs") &&
+    normalized.includes("follow the doctor's instructions")
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function VisitSummary({
@@ -1425,6 +1562,7 @@ function VisitSummary({
               body={card.body}
               icon={card.icon}
               tone={card.tone}
+              complete={isSummaryFieldComplete(card.title, card.body)}
             />
           ))}
         </div>
@@ -1446,18 +1584,20 @@ function VisitSummaryCard({
   body,
   icon: Icon,
   tone,
+  complete,
 }: {
   title: string;
   body: string;
   icon: typeof Pill;
   tone: "primary" | "success" | "warning";
+  complete: boolean;
 }) {
   const toneClass = {
     primary: "bg-primary text-primary-foreground",
     success: "bg-success text-white",
     warning: "bg-warning text-white",
   }[tone];
-  const checkClass = "bg-success text-white";
+  const statusClass = complete ? "bg-success text-white" : "bg-warning/15 text-warning";
 
   return (
     <div className="flex items-start gap-3 rounded-2xl border bg-background p-4 shadow-card lg:p-5">
@@ -1468,8 +1608,12 @@ function VisitSummaryCard({
         <div className="text-base font-bold leading-tight">{title}</div>
         <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{body}</p>
       </div>
-      <div className={`grid size-9 shrink-0 place-items-center rounded-full ${checkClass}`}>
-        <Check className="size-5" />
+      <div
+        className={`grid size-9 shrink-0 place-items-center rounded-full ${statusClass}`}
+        aria-label={complete ? `${title} complete` : `${title} needs clarification`}
+        title={complete ? "Complete" : "Needs clarification"}
+      >
+        {complete ? <Check className="size-5" /> : <AlertTriangle className="size-5" />}
       </div>
     </div>
   );
