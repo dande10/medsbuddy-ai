@@ -535,7 +535,7 @@ type VisitSummaryData = {
 const WAKE_WORD_PATTERN =
   /\b(?:(?:hey|okay|ok|hello|hi)\s+)?(?:meds\s*buddy|medz\s*buddy|medsbuddy|medbuddy|miss\s*buddy|mrs\s*buddy|matt'?s?\s*body|meds\s*body|miss\s*body|it'?s\s*buddy|made\s+his\s+body)\b/i;
 const ADVOCATE_ALERT_COOLDOWN_MS = 8000;
-const TRANSCRIPT_MERGE_DELAY_MS = 2600;
+const TRANSCRIPT_MERGE_DELAY_MS = 700;
 const STOP_TALKING_PATTERN =
   /\b(?:meds\s*buddy\s*)?(?:please\s+)?(?:stop talking|do not speak|don't speak|be quiet|stay quiet|stop speaking)\b/i;
 const START_TALKING_PATTERN =
@@ -631,34 +631,51 @@ function parseTranscriptMessages(
   const speakerPattern = /(Doctor|Patient|MedsBuddy)\s*:/gi;
   const matches = [...clean.matchAll(speakerPattern)];
   if (!matches.length) {
-    const cleanedText = removeDuplicateRepeatedPhrases(
-      getDoctorAnswerAfterMedsBuddyEcho(clean, existingMessages),
-    );
+    const cleanedText = getDoctorAnswerAfterMedsBuddyEcho(clean, existingMessages);
+    const turns = splitMixedClinicalTurns(cleanedText);
     if (selectedSpeaker !== "Auto") {
-      return [{ speaker: selectedSpeaker, text: cleanedText }];
+      return turns.map((turn) => ({
+        speaker: selectedSpeaker,
+        text: removeDuplicateRepeatedPhrases(turn),
+      }));
     }
 
     if (lastMedsBuddyQuestionWasForDoctor(existingMessages)) {
-      return [
-        {
-          speaker: "Doctor",
-          text: cleanedText,
-          speakerConfidence: 0.88,
-          speakerReason: "The doctor is answering MedsBuddy's pending clarification.",
-          speakerSource: "local_rules",
-        },
-      ];
+      return turns.map((turn) => ({
+        speaker: "Doctor",
+        text: removeDuplicateRepeatedPhrases(turn),
+        speakerConfidence: 0.88,
+        speakerReason: "The doctor is answering MedsBuddy's pending clarification.",
+        speakerSource: "local_rules",
+      }));
     }
 
-    return [
-      {
-        speaker: "Unknown",
-        text: cleanedText,
-        speakerConfidence: 0,
-        speakerReason: "Awaiting Qwen speaker classification.",
-        speakerSource: "qwen_pending",
-      },
-    ];
+    const messages: ConversationMessage[] = [];
+    for (const turn of turns) {
+      const text = removeDuplicateRepeatedPhrases(turn);
+      const classification = classifySpeakerFromTranscript(text, [
+        ...existingMessages,
+        ...messages,
+      ]);
+      messages.push({
+        speaker: classification.speaker,
+        text,
+        speakerConfidence: classification.confidence,
+        speakerReason: classification.reason,
+        speakerSource: classification.source,
+      });
+    }
+    return messages.length
+      ? messages
+      : [
+          {
+            speaker: "Unknown",
+            text: removeDuplicateRepeatedPhrases(cleanedText),
+            speakerConfidence: 0,
+            speakerReason: "Awaiting Qwen speaker classification.",
+            speakerSource: "qwen_pending",
+          },
+        ];
   }
 
   const messages: ConversationMessage[] = [];
@@ -682,6 +699,19 @@ function parseTranscriptMessages(
     });
   }
   return messages;
+}
+
+function splitMixedClinicalTurns(text: string): string[] {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const commandTurns = splitTranscriptIntoPossibleTurns(normalized);
+  if (commandTurns.length > 1) return commandTurns;
+
+  return normalized
+    .split(
+      /\s+(?=(?:what is|what's|tell me|are you|do you|have you|let me|i saw|your throat|it seems|i will|i'll|we will|take|follow up|seek|go to|yeah|yes|no)\b)/i,
+    )
+    .map((turn) => turn.trim())
+    .filter((turn) => turn.split(/\s+/).length >= 3 || WAKE_WORD_PATTERN.test(turn));
 }
 
 function getDoctorAnswerAfterMedsBuddyEcho(
@@ -1001,6 +1031,31 @@ function getSpeakerLines(messages: ConversationMessage[], speaker: ConversationS
     .map((message) => message.text);
 }
 
+function isMedsBuddyQuestionEcho(text: string): boolean {
+  return /\b(could you|can you|please clarify|please confirm|what warning signs|when to follow up|how often to take|how long to continue)\b/i.test(
+    text,
+  );
+}
+
+function getClinicalDoctorLines(messages: ConversationMessage[]): string[] {
+  return dedupeConversation(messages)
+    .filter((message) => {
+      if (message.speaker !== "Doctor" && message.speaker !== "Unknown") return false;
+      if (
+        isMedsBuddyQuestionEcho(message.text) &&
+        !/\b(yes|yeah|patient|follow up|urgent care|amoxicillin|mg|twice|daily|one week|7 days|seven days)\b/i.test(
+          message.text,
+        )
+      ) {
+        return false;
+      }
+      return /\b(throat|infection|inflamed|amoxicillin|antibiotic|mg|tablet|capsule|twice|daily|one week|7 days|seven days|follow up|urgent care|warning|vomit|headache|breath|swallow)\b/i.test(
+        message.text,
+      );
+    })
+    .map((message) => message.text);
+}
+
 function joinLines(lines: string[], fallback: string): string {
   const clean = lines.map(removeDuplicateRepeatedPhrases).filter(Boolean);
   return clean.length ? clean.join(" ") : fallback;
@@ -1014,15 +1069,14 @@ function getPatientConcernText(messages: ConversationMessage[]): string {
 }
 
 function getDoctorAnswerText(messages: ConversationMessage[]): string {
-  return joinLines(
-    getSpeakerLines(messages, "Doctor"),
-    "No doctor response has been captured yet.",
-  );
+  return joinLines(getClinicalDoctorLines(messages), "No doctor response has been captured yet.");
 }
 
 function getWarningSignText(messages: ConversationMessage[]): string {
-  const warningLines = getSpeakerLines(messages, "Doctor").filter((line) =>
-    /warning|urgent|emergency|severe|worse|worsen/i.test(line),
+  const warningLines = getClinicalDoctorLines(messages).filter(
+    (line) =>
+      /warning|urgent|emergency|severe|worse|worsen|vomit|headache|breath|swallow/i.test(line) &&
+      !/^take it when to follow up/i.test(normalizeTranscriptText(line)),
   );
   return joinLines(
     warningLines,
@@ -1031,7 +1085,7 @@ function getWarningSignText(messages: ConversationMessage[]): string {
 }
 
 function getDiagnosisText(messages: ConversationMessage[]): string {
-  const doctorLines = getSpeakerLines(messages, "Doctor");
+  const doctorLines = getClinicalDoctorLines(messages);
   const diagnosisLine = doctorLines.find((line) =>
     /\b(bacterial|viral|infection|strep|inflamed|diagnosis|looks like|seems like|believe this is|assessment)\b/i.test(
       line,
@@ -1066,7 +1120,7 @@ function getMedicationGuidanceText(messages: ConversationMessage[]): string {
 }
 
 function getFollowUpText(messages: ConversationMessage[]): string {
-  const followUpLine = getSpeakerLines(messages, "Doctor").find((line) =>
+  const followUpLine = getClinicalDoctorLines(messages).find((line) =>
     /\b(follow up|follow-up|come back|return|see me|see us|appointment|schedule|check in|recheck|next week|tomorrow)\b/i.test(
       line,
     ),

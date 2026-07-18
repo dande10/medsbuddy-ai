@@ -931,7 +931,7 @@ export function DoctorPage() {
               if (!cancelled && recorder.state === "recording") {
                 recorder.stop();
               }
-            }, 4500);
+            }, 2500);
           } catch (error) {
             console.warn("[MedsBuddy STT] Could not start recorder.", error);
             elevenLabsSttUnavailableRef.current = true;
