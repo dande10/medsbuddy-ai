@@ -631,9 +631,23 @@ function parseTranscriptMessages(
   const speakerPattern = /(Doctor|Patient|MedsBuddy)\s*:/gi;
   const matches = [...clean.matchAll(speakerPattern)];
   if (!matches.length) {
-    const cleanedText = removeDuplicateRepeatedPhrases(clean);
+    const cleanedText = removeDuplicateRepeatedPhrases(
+      getDoctorAnswerAfterMedsBuddyEcho(clean, existingMessages),
+    );
     if (selectedSpeaker !== "Auto") {
       return [{ speaker: selectedSpeaker, text: cleanedText }];
+    }
+
+    if (lastMedsBuddyQuestionWasForDoctor(existingMessages)) {
+      return [
+        {
+          speaker: "Doctor",
+          text: cleanedText,
+          speakerConfidence: 0.88,
+          speakerReason: "The doctor is answering MedsBuddy's pending clarification.",
+          speakerSource: "local_rules",
+        },
+      ];
     }
 
     return [
@@ -668,6 +682,20 @@ function parseTranscriptMessages(
     });
   }
   return messages;
+}
+
+function getDoctorAnswerAfterMedsBuddyEcho(
+  text: string,
+  existingMessages: ConversationMessage[],
+): string {
+  if (!lastMedsBuddyQuestionWasForDoctor(existingMessages)) return text;
+
+  const clean = text.replace(/\s+/g, " ").trim();
+  const answerStart = clean.search(
+    /\b(?:yes|yeah|correct|the patient|patient|follow up|seek|go to|return|come back|take|use|twice|once|daily|for\s+(?:one|two|three|four|five|seven|ten|fourteen|\d+))\b/i,
+  );
+  if (answerStart > 12) return clean.slice(answerStart).trim();
+  return clean;
 }
 
 function splitTranscriptIntoPossibleTurns(text: string): string[] {
@@ -762,7 +790,12 @@ function isTalkingControlCommand(text: string): boolean {
 
 function looksLikeDoctorAnswerToMedsBuddy(text: string): boolean {
   const clean = normalizeTranscriptText(text);
-  return /^(yes|no|correct|that's right|that is right)\b/i.test(clean);
+  return (
+    /^(yes|yeah|no|correct|that's right|that is right)\b/i.test(clean) ||
+    /\b(follow up|seek|urgent care|emergency|warning signs?|difficulty breathing|cannot swallow|worse|worsen|take|twice|once|daily|for (?:one|two|three|four|five|seven|ten|fourteen|\d+) (?:days?|weeks?))\b/i.test(
+      clean,
+    )
+  );
 }
 
 function classifySpeakerFromTranscript(

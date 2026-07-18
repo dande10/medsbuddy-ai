@@ -289,9 +289,9 @@ export function DoctorPage() {
     if (stage !== "active") return;
     if (!medsBuddyTalking) return;
 
-    const unsaidMessages = visitMessages.filter((message, index) => {
+    const unsaidMessages = visitMessages.filter((message) => {
       if (message.speaker !== "MedsBuddy") return false;
-      const key = `${index}:${normalizeTranscriptText(message.text)}`;
+      const key = normalizeTranscriptText(message.text);
       if (spokenMedsBuddyKeysRef.current.has(key)) return false;
       spokenMedsBuddyKeysRef.current.add(key);
       return true;
@@ -351,6 +351,12 @@ export function DoctorPage() {
     }
     setWakeStatus(status);
     setVisitMessages((messages) => {
+      const key = normalizeTranscriptText(text);
+      const alreadyExists = messages.some(
+        (message) =>
+          message.speaker === "MedsBuddy" && normalizeTranscriptText(message.text) === key,
+      );
+      if (alreadyExists) return messages;
       const withResponse = dedupeConversation([...messages, { speaker: "MedsBuddy", text }]);
       visitMessagesRef.current = withResponse;
       return withResponse;
@@ -673,8 +679,9 @@ export function DoctorPage() {
 
         const intentResponse =
           stageAllowsResponse &&
-          (carePlanResponse ||
-            (decision.shouldRespond && (decision.response || fallbackContextResponse)));
+          (decision.intent === "care_plan_instruction"
+            ? carePlanResponse
+            : decision.shouldRespond && (decision.response || fallbackContextResponse));
 
         if (intentResponse) {
           addMedsBuddyVisitMessage(
@@ -1050,9 +1057,7 @@ export function DoctorPage() {
         followUp: localSummary.followUpInstructions,
         warningSigns: localSummary.warningSigns,
         approvedByPatient: true,
-      }).catch(() => {
-        toast.error("Could not save visit memory to Alibaba ECS.");
-      });
+      }).catch(() => undefined);
       resetCurrentPatientContext();
       setSummarySaved(true);
     }
@@ -1066,9 +1071,7 @@ export function DoctorPage() {
       .then((remoteSummary) => {
         setVisitSummary(mergeRemoteSummary(localSummary, remoteSummary.summary));
       })
-      .catch(() => {
-        toast.info("Alibaba ECS summary unavailable. Showing local visit summary.");
-      });
+      .catch(() => undefined);
   };
 
   const speakVisitSummary = () => {
